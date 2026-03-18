@@ -1395,6 +1395,20 @@ class AutoTuner:
         base_profile = list(list(shape) for shape in shapes)
 
         for spec in dynamic_tensor_specs:
+            # Bounds check: skip specs that reference inputs or dimensions not present in the
+            # current shapes tuple. This can happen on hardware (e.g. SM121 / DGX Spark) where
+            # ops produce fewer or differently-shaped tensors than the specs were authored for.
+            if spec.input_idx >= len(base_profile):
+                logger.debug(
+                    f"[Autotuner] Skipping DynamicTensorSpec with input_idx={spec.input_idx}: "
+                    f"only {len(base_profile)} inputs available.")
+                continue
+            if spec.dim_idx >= len(base_profile[spec.input_idx]):
+                logger.debug(
+                    f"[Autotuner] Skipping DynamicTensorSpec with dim_idx={spec.dim_idx} for "
+                    f"input {spec.input_idx}: shape has only {len(base_profile[spec.input_idx])} dims.")
+                continue
+
             # During runtime: apply map_to_tuning_buckets to map input to bucket
             # During tuning: no mapper, use raw bucket value
             if apply_map_to_tuning_buckets:
@@ -1409,7 +1423,18 @@ class AutoTuner:
 
         # associated dimensions dependent on other free dynamic dimensions, so assign -1 in the profile
         for spec in constraint_specs:
+            # Bounds check: same defensive guard as above for constraint specs.
+            if spec.input_idx >= len(base_profile):
+                logger.debug(
+                    f"[Autotuner] Skipping ConstraintSpec with input_idx={spec.input_idx}: "
+                    f"only {len(base_profile)} inputs available.")
+                continue
             if base_profile[spec.input_idx] == [0]:
+                continue
+            if spec.dim_idx >= len(base_profile[spec.input_idx]):
+                logger.debug(
+                    f"[Autotuner] Skipping ConstraintSpec with dim_idx={spec.dim_idx} for "
+                    f"input {spec.input_idx}: shape has only {len(base_profile[spec.input_idx])} dims.")
                 continue
             base_profile[spec.input_idx][spec.dim_idx] = -1
 
