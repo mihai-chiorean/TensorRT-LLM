@@ -797,12 +797,21 @@ def is_sm_100f(sm_version=None):
 
 
 def is_sm_120f(sm_version=None):
+    """Check if the GPU is in the SM120 family (SM120, SM121).
+
+    SM120 is used by RTX PRO 6000, SM121 by DGX Spark (GB10) and
+    GeForce RTX 5090 mobile / Jetson.  These GPUs use different ISA
+    instructions (mma.sync.aligned.block_scale) compared to SM100/SM103
+    (tcgen05.mma), so trtllm-gen FMHA cubins compiled for SM100 cannot
+    run on SM120.
+    """
     if sm_version is None:
         sm_version = get_sm_version()
     return sm_version == 120 or sm_version == 121
 
 
 def is_blackwell(sm_version=None):
+    """Check if the GPU belongs to the Blackwell generation (SM100 or SM120 family)."""
     if sm_version is None:
         sm_version = get_sm_version()
     return is_sm_100f(sm_version) or is_sm_120f(sm_version)
