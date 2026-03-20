@@ -251,7 +251,7 @@ class ModelConfig(Generic[TConfig]):
         if moe_backend.upper() != "AUTO":
             return moe_backend
 
-        if architecture == "GptOssForCausalLM":
+        if architecture in ("GptOssForCausalLM", "MiniMaxM2ForCausalLM"):
             sm_version = get_sm_version()
             # Select the best performing backend based on SM version
             if 100 <= sm_version < 120 or sm_version in (120, 121):  # Blackwell

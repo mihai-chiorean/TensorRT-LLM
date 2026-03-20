@@ -16,6 +16,7 @@ from .modeling_hunyuan_moe import HunYuanMoEV1ForCausalLM
 from .modeling_hyperclovax import HCXVisionForCausalLM
 from .modeling_llama import LlamaForCausalLM
 from .modeling_llava_next import LlavaNextModel
+from .modeling_minimax import MiniMaxForCausalLM
 from .modeling_minimaxm2 import MiniMaxM2ForCausalLM
 from .modeling_mistral import Mistral3VLM, MistralForCausalLM
 from .modeling_mixtral import MixtralForCausalLM
@@ -86,6 +87,7 @@ __all__ = [
     "Glm4MoeForCausalLM",
     "Qwen3VLModel",
     "MiniMaxM2ForCausalLM",
+    "MiniMaxForCausalLM",
     "Cohere2ForCausalLM",
 ]
 
