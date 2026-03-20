@@ -395,3 +395,20 @@ def griddepcontrol_launch_dependents(*, loc=None, ip=None) -> None:
         loc=loc,
         ip=ip,
     )
+
+
+def get_smem_arch_string():
+    """Get the architecture string for shared memory capacity lookup.
+
+    Maps SM121 to SM120 since they share the same shared memory capacity,
+    and SM121 is not in CUTLASS's capacity map.
+    Falls back to sm_100 for unknown Blackwell architectures.
+    """
+    from tensorrt_llm._utils import get_sm_version
+    sm = get_sm_version()
+    if sm in (120, 121):
+        return "sm_120"
+    elif sm in (100, 103):
+        return f"sm_{sm}"
+    else:
+        return "sm_100"

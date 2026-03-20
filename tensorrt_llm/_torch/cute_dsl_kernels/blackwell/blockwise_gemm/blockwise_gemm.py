@@ -55,6 +55,8 @@ import cutlass.utils.blackwell_helpers as sm100_utils
 from cutlass.cute.nvgpu import cpasync, tcgen05
 from cutlass.pipeline import pipeline_init_arrive, pipeline_init_wait
 
+from ..utils import get_smem_arch_string
+
 """
 High-performance persistent blockwise dense GEMM (C = (SFA * A) * (SFB * B)) example for the NVIDIA Blackwell
 architecture using CUTE DSL.
@@ -244,7 +246,7 @@ class Sm100BlockwiseGemmKernel:
             barrier_id=3,
             num_threads=self.threads_per_warp,
         )
-        self.num_smem_capacity = utils.get_smem_capacity_in_bytes("sm_100")
+        self.num_smem_capacity = utils.get_smem_capacity_in_bytes(get_smem_arch_string())
         # TMEM offset for final accumulator
         self.tmem_final_offset = 384
 

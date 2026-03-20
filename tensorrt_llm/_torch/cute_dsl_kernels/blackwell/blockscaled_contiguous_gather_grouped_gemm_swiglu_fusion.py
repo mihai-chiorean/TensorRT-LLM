@@ -43,6 +43,7 @@ from .custom_pipeline import PipelineCpAsyncUmma
 from .utils import (
     TRTLLM_ENABLE_PDL,
     fmin,
+    get_smem_arch_string,
     griddepcontrol_launch_dependents,
     griddepcontrol_wait,
     is_power_of_2,
@@ -504,7 +505,7 @@ class BlockScaledContiguousGatherGroupedGemmKernel:
             num_threads=self.threads_per_warp,
         )
 
-        self.num_smem_capacity = utils.get_smem_capacity_in_bytes("sm_100")
+        self.num_smem_capacity = utils.get_smem_capacity_in_bytes(get_smem_arch_string())
         SM100_TMEM_CAPACITY_COLUMNS = 512
         self.num_tmem_alloc_cols = SM100_TMEM_CAPACITY_COLUMNS
 
