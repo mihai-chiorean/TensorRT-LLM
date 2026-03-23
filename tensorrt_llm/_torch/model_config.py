@@ -272,7 +272,8 @@ class ModelConfig(Generic[TConfig]):
         with open(quant_config_file) as f:
             quant_config_dict = json.load(f)
 
-        json_quant_configs = quant_config_dict['quantization']
+        json_quant_configs = quant_config_dict.get('quantization',
+                                                   quant_config_dict)
 
         quant_config.quant_algo = json_quant_configs.get('quant_algo', None)
         # fp8_pb_wo from modelopt is the same as FP8_BLOCK_SCALES

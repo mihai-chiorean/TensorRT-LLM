@@ -13,8 +13,8 @@ from tensorrt_llm._torch.models.checkpoints.base_weight_loader import (
     BaseWeightLoader, ConsumableWeightsDict)
 from tensorrt_llm._torch.models.modeling_utils import (
     register_checkpoint_weight_loader, run_concurrently)
-from tensorrt_llm._utils import (local_mpi_barrier, local_mpi_rank,
-                                 local_mpi_size)
+from tensorrt_llm._utils import (is_device_integrated, local_mpi_barrier,
+                                 local_mpi_rank, local_mpi_size)
 from tensorrt_llm.logger import logger
 from tensorrt_llm.mapping import Mapping
 
@@ -38,6 +38,14 @@ class HfWeightLoader(BaseWeightLoader):
         if len(filtered_weight_files) > 0:
             weight_files = filtered_weight_files
         if weight_files:
+            # On integrated GPU systems (e.g. DGX Spark), CPU and GPU share
+            # the same physical memory.  Loading all safetensors shards
+            # concurrently to CPU doubles peak memory (model on CUDA + all
+            # weights on CPU).  Instead, load one shard at a time directly
+            # to CUDA so each shard is freed before the next is read.
+            if is_device_integrated():
+                return self._load_weights_streaming(weight_files)
+
             # Prefetch the weight files to CPU memory if the size is less than 90% of the available memory.
             # This is a heuristic to avoid prefetching files that are too large and causing file cache thrashing.
             prefetch_size = sum(os.path.getsize(file) for file in weight_files)
@@ -68,6 +76,32 @@ class HfWeightLoader(BaseWeightLoader):
                 "Loading bin weights in parallel")
 
         raise RuntimeError(f"No weight files found in {checkpoint_dir}.")
+
+    def _load_weights_streaming(
+            self, weight_files: List[str]) -> ConsumableWeightsDict:
+        """Load safetensors files one at a time, directly to CUDA.
+
+        Designed for integrated-GPU / unified-memory systems (e.g. DGX Spark)
+        where CPU and GPU share the same physical memory pool.  Loading all
+        shards concurrently would require ~2x model size in that shared pool.
+
+        Each shard is loaded to CUDA via ``safetensors.torch.load_file(f,
+        device="cuda")``, its tensors are merged into the result dict, and the
+        per-shard dict is discarded before the next file is opened.  This keeps
+        the high-water mark close to 1x model size.
+        """
+        weights: dict = {}
+        logger.info(
+            "Integrated GPU detected \u2014 loading %d safetensors shard(s) "
+            "sequentially to CUDA to reduce peak memory.", len(weight_files))
+        for i, wf in enumerate(
+                tqdm.tqdm(weight_files,
+                          desc="Loading safetensors (streaming)")):
+            logger.info("Loading shard %d/%d: %s", i + 1, len(weight_files), wf)
+            shard = safetensors.torch.load_file(wf, device="cuda")
+            weights.update(shard)
+            del shard  # release shard-local references immediately
+        return ConsumableWeightsDict(weights)
 
     def _load_weights_in_parallel(self, weight_files: List[str], load_func,
                                   description: str) -> ConsumableWeightsDict:
