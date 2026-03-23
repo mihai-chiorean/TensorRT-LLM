@@ -7,7 +7,7 @@ import torch
 
 from tensorrt_llm._mnnvl_utils import MnnvlMemory, MnnvlMoe
 from tensorrt_llm._torch.distributed.moe_alltoall import MoeAlltoAll
-from tensorrt_llm._utils import get_sm_version
+from tensorrt_llm._utils import get_sm_version, is_blackwell
 from tensorrt_llm.logger import logger
 from tensorrt_llm.models.modeling_utils import QuantAlgo
 from tensorrt_llm.tools.layer_wise_benchmarks import get_calibrator
@@ -66,6 +66,7 @@ class CutlassFusedMoE(MoE):
     #   - ("min", N): SM >= N
     #   - ("exact", N): SM == N
     #   - ("in", {N1, N2, ...}): SM in set
+    #   - ("blackwell",): is_blackwell(SM)
     _QUANT_SUPPORT_TABLE = {
         # Unquantized (FP16/BF16): SM >= 80
         None: {
@@ -82,12 +83,9 @@ class CutlassFusedMoE(MoE):
             "sm_constraint": ("in", {90, 120}),
             "dtypes": {torch.bfloat16},
         },
-        # NVFP4: SM in {100, 103, 120, 121}
-        # SM 120 = desktop Blackwell (e.g. RTX 5090 / GB202)
-        # SM 121 = GB10 / DGX Spark
-        # C++ kernel: isValidSM120MOESpecialisation() supports FP4xFP4 and FP8xFP4
+        # NVFP4: Blackwell family
         QuantAlgo.NVFP4: {
-            "sm_constraint": ("in", {100, 103, 120, 121}),
+            "sm_constraint": ("blackwell", ),
             "dtypes": {torch.float16, torch.bfloat16, torch.float8_e4m3fn},
         },
         # W4A8_AWQ: SM in {89, 90} only
@@ -134,7 +132,7 @@ class CutlassFusedMoE(MoE):
         - Unquantized (FP16/BF16): SM >= 80
         - FP8 per-tensor (QDQ): SM >= 89
         - FP8_BLOCK_SCALES: SM in {90, 120}
-        - NVFP4: SM in {100, 103, 120, 121}
+        - NVFP4: Blackwell family (is_blackwell())
         - W4A8_AWQ: SM in {89, 90} only
         - W8A16: SM >= 80
         - W4A16_MXFP4: SM == 90 only
@@ -178,10 +176,17 @@ class CutlassFusedMoE(MoE):
         support_info = cls._QUANT_SUPPORT_TABLE[quant_algo]
 
         # Check SM version constraint
-        constraint_type, constraint_value = support_info["sm_constraint"]
+        sm_constraint = support_info["sm_constraint"]
+        constraint_type = sm_constraint[0]
+        constraint_value = sm_constraint[1] if len(sm_constraint) > 1 else None
         algo_name = "unquantized" if quant_algo is None else quant_algo.name
 
-        if constraint_type == "min":
+        if constraint_type == "blackwell":
+            if not is_blackwell(sm_version):
+                return _warn_and_return(
+                    f"CutlassFusedMoE {algo_name} requires Blackwell family, "
+                    f"got SM{sm_version}")
+        elif constraint_type == "min":
             if sm_version < constraint_value:
                 return _warn_and_return(
                     f"CutlassFusedMoE {algo_name} requires SM >= {constraint_value}, "

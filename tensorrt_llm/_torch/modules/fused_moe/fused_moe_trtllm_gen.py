@@ -23,7 +23,7 @@ from torch import nn
 
 from tensorrt_llm._mnnvl_utils import MnnvlMemory, MnnvlMoe
 from tensorrt_llm._torch.distributed.moe_alltoall import MoeAlltoAll
-from tensorrt_llm._utils import get_sm_version
+from tensorrt_llm._utils import get_sm_version, is_blackwell
 from tensorrt_llm.logger import logger
 from tensorrt_llm.models.modeling_utils import QuantAlgo
 
@@ -107,7 +107,7 @@ class TRTLLMGenFusedMoE(MoE):
         """
         Check if TRTLLMGenFusedMoE can implement the given quantization algorithm.
 
-        TRTLLMGenFusedMoE only supports SM in {100, 103, 120, 121} and the following quantizations:
+        TRTLLMGenFusedMoE only supports Blackwell family (is_blackwell()) and the following quantizations:
         - NVFP4
         - FP8_BLOCK_SCALES
         - W4A8_NVFP4_FP8
@@ -131,10 +131,10 @@ class TRTLLMGenFusedMoE(MoE):
 
         sm_version = get_sm_version()
 
-        # TRTLLMGenFusedMoE requires SM in {100, 103, 120, 121} (Blackwell family)
-        if sm_version not in {100, 103, 120, 121}:
+        # TRTLLMGenFusedMoE requires Blackwell family
+        if not is_blackwell(sm_version):
             return _warn_and_return(
-                f"TRTLLMGenFusedMoE requires Blackwell (SM100/103/120/121), got SM{sm_version}"
+                f"TRTLLMGenFusedMoE requires Blackwell family, got SM{sm_version}"
             )
 
         # Check dtype_activation: only bfloat16 is supported

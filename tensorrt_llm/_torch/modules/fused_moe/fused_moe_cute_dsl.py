@@ -20,7 +20,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import torch
 import torch.nn.functional as F
 
-from tensorrt_llm._utils import get_sm_version, is_blackwell, is_sm_100f
+from tensorrt_llm._utils import get_sm_version, is_blackwell
 from tensorrt_llm.models.modeling_utils import QuantAlgo
 
 from ...autotuner import (AutoTuner, ConstraintSpec, DynamicTensorSpec,
@@ -360,7 +360,7 @@ class CuteDslFusedMoE(CutlassFusedMoE):
         Check if CuteDslFusedMoE can implement the given quantization algorithm.
 
         CuteDslFusedMoE supports:
-        - NVFP4: SM in {100, 103, 120, 121}
+        - NVFP4: Blackwell family (is_blackwell())
 
         Does NOT support unquantized mode. Output dtype is hardcoded to bfloat16.
         Does NOT support swiglu_gptoss_style (bias/swiglu with custom alpha/beta/limit).
@@ -402,11 +402,11 @@ class CuteDslFusedMoE(CutlassFusedMoE):
                 "CuteDslFusedMoE does not support swiglu_gptoss_style (bias/swiglu with custom alpha/beta/limit)"
             )
 
-        # NVFP4 - SM in {100, 103, 120, 121} (Blackwell family)
+        # NVFP4 - Blackwell family only
         if quant_algo == QuantAlgo.NVFP4:
-            if sm_version not in {100, 103, 120, 121}:
+            if not is_blackwell(sm_version):
                 return _warn_and_return(
-                    f"NVFP4 requires Blackwell (SM100/103/120/121), got SM{sm_version}")
+                    f"NVFP4 requires Blackwell family, got SM{sm_version}")
             return True, None
 
         return _warn_and_return(
