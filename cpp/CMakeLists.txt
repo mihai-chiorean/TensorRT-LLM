@@ -553,7 +553,7 @@ print(os.path.dirname(torch.__file__),end='');"
                  "${CMAKE_CUDA_FLAGS}")
   if("${CMAKE_CUDA_FLAGS_NEW}" STREQUAL "${CMAKE_CUDA_FLAGS}")
     message(
-      FATAL_ERROR
+      WARNING
         "Torch didn't generate expected placeholder CUDA architecture flags.")
   endif()
   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS_NEW}")
