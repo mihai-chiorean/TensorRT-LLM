@@ -253,6 +253,18 @@ set_target_properties(
 
 target_link_libraries(${SHARED_TARGET} PUBLIC ${TRTLLM_LINK_LIBS})
 
+# Link c10_cuda for systems where venv torch does not include CUDA shared libs
+find_library(
+  C10_CUDA_LIBRARY c10_cuda
+  PATHS "${TORCH_INSTALL_PREFIX}/lib" "${CMAKE_PREFIX_PATH}/../lib"
+  NO_DEFAULT_PATH)
+if(C10_CUDA_LIBRARY)
+  target_link_libraries(${SHARED_TARGET} PUBLIC ${C10_CUDA_LIBRARY})
+  message(STATUS "Found c10_cuda: ${C10_CUDA_LIBRARY}")
+else()
+  message(WARNING "c10_cuda not found, NCCL window allocator may fail to link")
+endif()
+
 target_link_libraries(
   ${SHARED_TARGET}
   PRIVATE $<LINK_LIBRARY:WHOLE_ARCHIVE,${BATCH_MANAGER_TARGET}>
