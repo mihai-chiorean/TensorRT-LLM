@@ -31,6 +31,7 @@
 #pragma GCC diagnostic pop
 #endif          // __GNUC
 
+#include <algorithm>
 #include <cuda_runtime_api.h>
 #include <set>
 #include <vector>
@@ -546,6 +547,28 @@ std::vector<CutlassGemmConfig> get_candidate_configs_sm120(CutlassGemmConfig::Ca
                 MainloopScheduleType::AUTO, EpilogueScheduleType::AUTO, ClusterShape::ClusterShape_1x1x1});
             candidate_configs.push_back(CutlassGemmConfig{CutlassTileConfigSM120::CtaShape256x128x64B,
                 MainloopScheduleType::AUTO, EpilogueScheduleType::AUTO, ClusterShape::ClusterShape_1x1x1});
+
+            // Filter configs by device shared memory capacity.
+            // SM121 (GB10) has 99 KiB vs SM120 (B200) with 228 KiB.
+            {
+                static int const kMaxSmem = []()
+                {
+                    int val = 0;
+                    cudaDeviceGetAttribute(&val, cudaDevAttrMaxSharedMemoryPerBlockOptin, 0);
+                    return val;
+                }();
+
+                if (kMaxSmem < 120 * 1024)
+                {
+                    // Remove 128B K-tile configs that exceed 99 KiB at typical stage counts.
+                    // Keep only 64B K-tile configs which fit within 99 KiB.
+                    auto it = std::remove_if(candidate_configs.begin(), candidate_configs.end(),
+                        [](CutlassGemmConfig const& config)
+                        { return config.tile_config_sm120 == CutlassTileConfigSM120::CtaShape128x128x128B; });
+                    candidate_configs.erase(it, candidate_configs.end());
+                }
+            }
+
             return candidate_configs;
         }
         TLLM_THROW("Not Implemented: SM120 group GEMM only supports mxfp8-mxfp4 mixed or nvfp4.");
