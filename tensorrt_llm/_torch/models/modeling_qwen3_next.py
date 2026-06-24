@@ -1188,6 +1188,11 @@ class Qwen3NextModel(DecoderModel):
         config = self.model_config
         pretrained_config = self.model_config.pretrained_config
         self.aux_stream = torch.cuda.Stream()
+        # Expose aux_stream_dict for compatibility with MTPForCausalLM which
+        # calls model.aux_stream_dict when creating MTP draft layers.
+        self.aux_stream_dict = {
+            AuxStreamType.MoeChunkingOverlap: self.aux_stream,
+        }
         self.preload_weight_modules = []
         if config.moe_backend == "TRTLLM":
             self.preload_weight_modules = [

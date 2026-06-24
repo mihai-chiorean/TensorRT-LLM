@@ -47,12 +47,32 @@ class Qwen3_5MoeHfWeightMapper(Qwen3NextHfWeightMapper):
     _SUPPORTED_SUFFIXES = {"weight", "bias", "weight_scale_inv"}
 
     def _normalize_weight_names(self, weights: dict) -> dict:
+        """Normalize checkpoint weight key namespaces.
+
+        Three transformations are applied in order:
+
+        1. Drop model.visual.* keys (vision tower, not loaded by text path).
+        2. Strip model.language_model. prefix added by Qwen3.5 VLM checkpoints.
+        3. Remap mtp.* keys to model.layers.{num_hidden_layers}.* so the MTP
+           draft weights land in the correct model.layers slot.
+
+           Examples (num_hidden_layers == 40):
+               mtp.pre_fc_norm_embedding.weight
+                   -> model.layers.40.pre_fc_norm_embedding.weight
+               mtp.layers.0.input_layernorm.weight
+                   -> model.layers.40.layers.0.input_layernorm.weight
+               mtp.fc.weight -> model.layers.40.fc.weight
+               mtp.norm.weight -> model.layers.40.norm.weight
+        """
+        mtp_prefix = f"model.layers.{self.config.pretrained_config.num_hidden_layers}."
         normalized_weights = {}
         for key, tensor in weights.items():
             if key.startswith("model.visual."):
                 continue
             if key.startswith("model.language_model."):
                 key = "model." + key[len("model.language_model.") :]
+            if key.startswith("mtp."):
+                key = mtp_prefix + key[len("mtp."):]
             normalized_weights[key] = tensor
         return normalized_weights
 

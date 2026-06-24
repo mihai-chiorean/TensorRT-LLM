@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2022-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -46,6 +46,9 @@ class QuantAlgo(StrEnum, metaclass=BaseEnumMeta):
     W4A16_MXFP4 = auto()
     NVFP4_AWQ = auto()
     NVFP4_ARC = auto()
+    # Alias used by some NVFP4 checkpoints that store weight-only
+    # (W4, A16) NVFP4 quantization; treated identically to NVFP4.
+    W4A16_NVFP4 = auto()
     NO_QUANT = auto()
 
 
@@ -417,6 +420,9 @@ class QuantMode(IntFlag):
             quant_mode = QuantMode.from_description(use_nvfp4=True)
         elif quant_algo == QuantAlgo.NVFP4_ARC:
             # NVFP4_ARC uses the same QuantMode as NVFP4, distinction is at QuantAlgo level
+            quant_mode = QuantMode.from_description(use_nvfp4=True)
+        elif quant_algo == QuantAlgo.W4A16_NVFP4:
+            # W4A16_NVFP4 is a per-layer alias for NVFP4 used in MIXED_PRECISION checkpoints
             quant_mode = QuantMode.from_description(use_nvfp4=True)
         elif quant_algo == QuantAlgo.W4A8_NVFP4_FP8:
             quant_mode = QuantMode.from_description(use_w4a8_nvfp4_fp8=True)

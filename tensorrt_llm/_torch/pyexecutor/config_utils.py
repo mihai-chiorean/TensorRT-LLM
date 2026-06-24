@@ -207,9 +207,16 @@ class _Qwen35ConfigCompat:
             has_mrope = ("mrope_section" in rope_scaling
                          or rope_scaling.get("mrope_interleaved", False))
             if has_mrope:
-                rope_scaling["type"] = "mrope"
-                rope_scaling.pop("rope_type", None)
-            elif "type" not in rope_scaling and "rope_type" in rope_scaling:
+                # Strip mRoPE-specific fields: Qwen3.6 VLM checkpoints embed
+                # mrope_section / mrope_interleaved in the text_config, but the
+                # text-only execution path uses 1-D position_ids (not the 3-D
+                # position_ids required by PositionEmbeddingType.mrope).
+                # Keeping these fields causes Qwen3Attention to select mrope and
+                # then crash on shape mismatch.  Remove them and treat the rope
+                # as plain yarn/default based on the remaining rope_type.
+                rope_scaling.pop("mrope_section", None)
+                rope_scaling.pop("mrope_interleaved", None)
+            if "type" not in rope_scaling and "rope_type" in rope_scaling:
                 rope_scaling["type"] = rope_scaling.pop("rope_type")
             text_config["rope_scaling"] = rope_scaling
         return text_config

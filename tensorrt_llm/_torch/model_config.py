@@ -313,14 +313,37 @@ class ModelConfig(Generic[TConfig]):
                     )
             quant_config.kv_cache_quant_algo = json_quant_configs[
                 "kv_cache_quant_algo"]
+            # Modules that produce a per-layer quant_algo that is an alias
+            # for an unsupported algorithm should be remapped and/or excluded.
+            # W4A16_NVFP4 is treated as NVFP4 (weight-only FP4).
+            # lm_head is excluded because create_weights() does not support
+            # NVFP4 for linear projection heads.
+            lm_head_algo = None
+            if mixed_quant_configs:
+                lm_head_entry = mixed_quant_configs.get('lm_head')
+                if lm_head_entry is not None:
+                    lm_head_algo = lm_head_entry.get('quant_algo')
             for layer in mixed_quant_configs:
                 config = QuantConfig()
                 config.kv_cache_quant_algo = kv_cache_quant_algo
-                config.quant_algo = mixed_quant_configs[layer]['quant_algo']
+                layer_algo = mixed_quant_configs[layer]['quant_algo']
+                # Normalize W4A16_NVFP4 alias -> NVFP4
+                if layer_algo == 'W4A16_NVFP4':
+                    layer_algo = QuantAlgo.NVFP4
+                config.quant_algo = layer_algo
                 config.group_size = mixed_quant_configs[layer].get(
                     'group_size', None)
                 mixed_quant_configs[layer] = config
             layer_quant_config = mixed_quant_configs
+            # Exclude lm_head from quantization: it uses W4A16_NVFP4 in the
+            # Qwen3.6 NVFP4 checkpoint but create_weights() for the LM head
+            # projection does not support NVFP4. Skip only when lm_head
+            # was actually present in quantized_layers.
+            if lm_head_algo is not None:
+                existing = list(quant_config.exclude_modules or [])
+                if 'lm_head' not in existing:
+                    existing.append('lm_head')
+                quant_config.exclude_modules = existing
         elif quant_config.quant_algo == QuantAlgo.FP8_BLOCK_SCALES:
             if quant_config.group_size is None:
                 quant_config.group_size = 128
