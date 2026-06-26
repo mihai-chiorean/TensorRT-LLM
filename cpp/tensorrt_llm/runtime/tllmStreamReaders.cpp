@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@
 #include "tensorrt_llm/common/assert.h"
 #include "tensorrt_llm/common/logger.h"
 
+#include <NvInferVersion.h>
 #include <cufile.h>
 #include <dlfcn.h>
 #include <fcntl.h>
@@ -27,6 +28,9 @@
 #include <unistd.h>
 
 // Non-GDS StreamReader
+// TRT 11 replaced IStreamReader (sync, no seek) with IStreamReaderV2
+// (async read + seek).  Both code paths share the same ifstream backend;
+// the cudaStream_t parameter is simply ignored for host-side I/O.
 
 StreamReader::StreamReader(std::filesystem::path fp)
 {
@@ -42,6 +46,36 @@ StreamReader::~StreamReader()
     }
 }
 
+#if NV_TENSORRT_MAJOR >= 11
+
+int64_t StreamReader::read(void* destination, int64_t nbBytes, cudaStream_t /*stream*/) noexcept
+{
+    if (!mFile.good())
+    {
+        return -1;
+    }
+
+    mFile.read(static_cast<char*>(destination), nbBytes);
+
+    return mFile.gcount();
+}
+
+bool StreamReader::seek(int64_t offset, nvinfer1::SeekPosition where) noexcept
+{
+    std::ios_base::seekdir dir;
+    switch (where)
+    {
+    case nvinfer1::SeekPosition::kSET: dir = std::ios::beg; break;
+    case nvinfer1::SeekPosition::kCUR: dir = std::ios::cur; break;
+    case nvinfer1::SeekPosition::kEND: dir = std::ios::end; break;
+    default: return false;
+    }
+    mFile.seekg(offset, dir);
+    return mFile.good();
+}
+
+#else // NV_TENSORRT_MAJOR < 11
+
 int64_t StreamReader::read(void* destination, int64_t nbBytes)
 {
     if (!mFile.good())
@@ -53,6 +87,8 @@ int64_t StreamReader::read(void* destination, int64_t nbBytes)
 
     return mFile.gcount();
 }
+
+#endif // NV_TENSORRT_MAJOR >= 11
 
 // StreamReader using GDS
 

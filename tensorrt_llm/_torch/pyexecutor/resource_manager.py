@@ -14,6 +14,7 @@ import tensorrt_llm
 import tensorrt_llm.bindings
 from tensorrt_llm._torch.distributed.communicator import Distributed, ReduceOp
 from tensorrt_llm._utils import (TensorWrapper, convert_to_torch_tensor,
+                                 is_device_integrated,
                                  get_size_in_bytes, mpi_comm, mpi_disabled,
                                  prefer_pinned, torch_comm)
 from tensorrt_llm.bindings.internal.batch_manager import KvCacheStats
@@ -388,7 +389,7 @@ class KVCacheManager(BaseResourceManager):
             self.blocks_in_primary_pool = int(kv_cache_config.max_tokens //
                                               tokens_per_block)
 
-            host_cache_size = kv_cache_config.host_cache_size if kv_cache_config.host_cache_size else 0
+            host_cache_size = 0 if is_device_integrated() else (kv_cache_config.host_cache_size if kv_cache_config.host_cache_size else 0)
             max_tokens_secondary = host_cache_size // self.get_cache_bytes_per_token(
             )
             self.blocks_in_secondary_pool = int(max_tokens_secondary //
@@ -1329,7 +1330,7 @@ class KVCacheManager(BaseResourceManager):
         free_gpu_memory_fraction = kv_cache_config.free_gpu_memory_fraction if kv_cache_config.free_gpu_memory_fraction else 0.9
         self._primary_pool_memory_bytes = kv_cache_config.max_gpu_total_bytes if kv_cache_config.max_gpu_total_bytes > 0 else int(
             free_mem * free_gpu_memory_fraction)
-        self._secondary_pool_memory_bytes = kv_cache_config.host_cache_size if kv_cache_config.host_cache_size else 0
+        self._secondary_pool_memory_bytes = 0 if is_device_integrated() else (kv_cache_config.host_cache_size if kv_cache_config.host_cache_size else 0)
         logger.debug(
             f"primary_pool_memory_bytes is set to {self._primary_pool_memory_bytes/1024**3}GB, \n"
             f"secondary_pool_memory_bytes is set to {self._secondary_pool_memory_bytes/1024**3}GB"

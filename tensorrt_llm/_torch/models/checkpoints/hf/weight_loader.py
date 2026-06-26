@@ -13,8 +13,8 @@ from tensorrt_llm._torch.models.checkpoints.base_weight_loader import (
     BaseWeightLoader, ConsumableWeightsDict)
 from tensorrt_llm._torch.models.modeling_utils import (
     register_checkpoint_weight_loader, run_concurrently)
-from tensorrt_llm._utils import (local_mpi_barrier, local_mpi_rank,
-                                 local_mpi_size)
+from tensorrt_llm._utils import (is_device_integrated, local_mpi_barrier,
+                                 local_mpi_rank, local_mpi_size)
 from tensorrt_llm.logger import logger
 from tensorrt_llm.mapping import Mapping
 
@@ -27,7 +27,7 @@ class HfWeightLoader(BaseWeightLoader):
     """
 
     def load_weights(self, checkpoint_dir: str,
-                     mapping: Mapping) -> dict[str, Any]:
+                     mapping: Mapping, **kwargs) -> dict[str, Any]:
         weight_files = glob.glob(f"{checkpoint_dir}/*.safetensors")
         # Some model checkpoint directories contain not only the sharded safetensors, but one
         # consolidated tensor. In the presence of both, we favor the former, as there really is no need
@@ -44,8 +44,9 @@ class HfWeightLoader(BaseWeightLoader):
             # If the layer number is overridden, it indicates that only a subset of layers are loaded.
             # Prefetching all layers is unnecessary.
             num_layers = int(os.environ.get("TLLM_OVERRIDE_LAYER_NUM", "0"))
-            enable_prefetch = prefetch_size < psutil.virtual_memory(
+            enable_prefetch = (prefetch_size < psutil.virtual_memory(
             ).available * 0.9 and num_layers == 0
+                and not is_device_integrated())
             if enable_prefetch:
                 logger.info(
                     f"Prefetching {prefetch_size / (1024**3):.2f}GB checkpoint files."
@@ -96,6 +97,10 @@ class HfWeightLoader(BaseWeightLoader):
     @staticmethod
     def _load_safetensors_file(file):
         logger.info(f"Start to load safetensor file {file}")
+        # On unified memory systems (e.g., DGX Spark), load directly to CUDA
+        # to avoid doubling memory usage via CPU mmap + GPU copy.
+        if is_device_integrated():
+            return safetensors.torch.load_file(file, device="cuda")
         return safetensors.torch.load_file(file)
 
     @staticmethod

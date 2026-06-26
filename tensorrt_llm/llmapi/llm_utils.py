@@ -338,7 +338,7 @@ class ModelLoader:
             )
             with open(hf_quant_config_path, "r") as f:
                 hf_quant_config = json.load(f)
-                hf_quant_config = hf_quant_config["quantization"]
+                hf_quant_config = hf_quant_config.get("quantization", hf_quant_config)
 
             hf_quant_algo = hf_quant_config.pop("quant_algo", None)
             if hf_quant_algo is not None:

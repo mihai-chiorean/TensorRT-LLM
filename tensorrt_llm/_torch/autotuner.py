@@ -1301,6 +1301,13 @@ class AutoTuner:
         for spec in tuning_config.dynamic_tensor_specs:
             assert callable(spec.gen_tuning_buckets) or isinstance(spec.gen_tuning_buckets, (list, tuple)), \
                 "The given dynamic dimension must provide a opt value generation function or a list of opt values"
+            # Bounds check: skip specs that reference inputs beyond the
+            # base_profile dimensions (can happen on architectures like SM121
+            # where the number of actual inputs differs from the spec template).
+            if spec.input_idx >= len(base_profile.shapes):
+                continue
+            if spec.dim_idx >= len(base_profile.shapes[spec.input_idx]):
+                continue
             if self.skip_dynamic_tuning_buckets:
                 if spec.map_to_tuning_buckets is not None:
                     # Still include the bucketed value of the actual shape so the
@@ -1395,6 +1402,12 @@ class AutoTuner:
         base_profile = list(list(shape) for shape in shapes)
 
         for spec in dynamic_tensor_specs:
+            # Bounds check: skip specs that reference inputs beyond the
+            # base_profile dimensions.
+            if spec.input_idx >= len(base_profile):
+                continue
+            if spec.dim_idx >= len(base_profile[spec.input_idx]):
+                continue
             # During runtime: apply map_to_tuning_buckets to map input to bucket
             # During tuning: no mapper, use raw bucket value
             if apply_map_to_tuning_buckets:
@@ -1409,7 +1422,11 @@ class AutoTuner:
 
         # associated dimensions dependent on other free dynamic dimensions, so assign -1 in the profile
         for spec in constraint_specs:
+            if spec.input_idx >= len(base_profile):
+                continue
             if base_profile[spec.input_idx] == [0]:
+                continue
+            if spec.dim_idx >= len(base_profile[spec.input_idx]):
                 continue
             base_profile[spec.input_idx][spec.dim_idx] = -1
 

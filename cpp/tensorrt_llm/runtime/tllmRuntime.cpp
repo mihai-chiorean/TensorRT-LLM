@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@
 
 #include "nlohmann/json.hpp"
 #include <NvInferRuntime.h>
+#include <NvInferVersion.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -259,7 +260,13 @@ void TllmRuntime::cacheTensorNames()
 nvinfer1::IExecutionContext& TllmRuntime::addContext(std::int32_t profileIndex)
 {
     TLLM_CHECK(0 <= profileIndex && profileIndex < mEngine->getNbOptimizationProfiles());
+#if NV_TENSORRT_MAJOR >= 11
+    // TRT 11 removed createExecutionContextWithoutDeviceMemory(); device memory
+    // is managed internally. setDeviceMemoryV2() below is a no-op in TRT 11.
+    mContexts.emplace_back(mEngine->createExecutionContext());
+#else
     mContexts.emplace_back(mEngine->createExecutionContextWithoutDeviceMemory());
+#endif
     if (!mContexts.back())
     {
         if (mEngine->getStreamableWeightsSize() > 0)
@@ -340,13 +347,25 @@ void TllmRuntime::printEngineInfo()
                     int const nDim = mEngine->getTensorShape(nameC).nbDims;
                     nvinfer1::Dims64 tensorShape{nDim, {-1}};
                     int const* pos = nullptr;
+#if NV_TENSORRT_MAJOR >= 11
+                    pos = mEngine->getProfileTensorValuesV2(nameC, k, nvinfer1::OptProfileSelector::kMIN);
+#else
                     pos = mEngine->getProfileTensorValues(nameC, k, nvinfer1::OptProfileSelector::kMIN);
+#endif
                     std::copy(pos, pos + nDim, tensorShape.d);
                     top[0] = tensorShape;
+#if NV_TENSORRT_MAJOR >= 11
+                    pos = mEngine->getProfileTensorValuesV2(nameC, k, nvinfer1::OptProfileSelector::kOPT);
+#else
                     pos = mEngine->getProfileTensorValues(nameC, k, nvinfer1::OptProfileSelector::kOPT);
+#endif
                     std::copy(pos, pos + nDim, tensorShape.d);
                     top[1] = tensorShape;
+#if NV_TENSORRT_MAJOR >= 11
+                    pos = mEngine->getProfileTensorValuesV2(nameC, k, nvinfer1::OptProfileSelector::kMAX);
+#else
                     pos = mEngine->getProfileTensorValues(nameC, k, nvinfer1::OptProfileSelector::kMAX);
+#endif
                     std::copy(pos, pos + nDim, tensorShape.d);
                     top[2] = tensorShape;
                     topPerTensor[k] = top;
@@ -383,7 +402,11 @@ void TllmRuntime::printEngineInfo()
                 else
                 {
                     TLLM_CHECK_WITH_INFO(context.allInputDimensionsSpecified(), "Input dimensions not specified");
+#if NV_TENSORRT_MAJOR >= 11
+                    TLLM_CHECK_WITH_INFO(context.allInputDimensionsSpecified(), "Input shapes not specified");
+#else
                     TLLM_CHECK_WITH_INFO(context.allInputShapesSpecified(), "Input shapes not specified");
+#endif
                     if (tensorInfo[i]["location"] == std::string("GPU"))
                     {
                         profileInfo[i][k].push_back(context.getTensorShape(nameC));
@@ -619,7 +642,11 @@ void TllmRuntime::setInputTensors(SizeType32 contextIndex, TensorMap const& tens
     {
         NVTX3_SCOPED_RANGE(final_checks);
         TLLM_CHECK_WITH_INFO(context.allInputDimensionsSpecified(), "Input dimensions not specified");
+#if NV_TENSORRT_MAJOR >= 11
+        TLLM_CHECK_WITH_INFO(context.allInputDimensionsSpecified(), "Input shapes not specified");
+#else
         TLLM_CHECK_WITH_INFO(context.allInputShapesSpecified(), "Input shapes not specified");
+#endif
     }
 
     // Print shape of input / output tensors for the TRT engine

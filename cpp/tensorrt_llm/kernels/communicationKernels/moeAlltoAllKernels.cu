@@ -992,7 +992,9 @@ __device__ __forceinline__ void vec_convert(
 }
 
 // BF16 → FP8 e4m3: paired PTX cvt.rn.satfinite.e4m3x2.bf16x2 (SM100+, Blackwell).
-#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000)
+// NOTE: cvt.rn.satfinite.e4m3x2.bf16x2 requires CUDA 13.1+ (PTX ISA 9.1).
+// For CUDA 13.0 (CUDA_VERSION < 13010), fall back to the generic float path above.
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 1000) && (CUDA_VERSION >= 13010)
 template <size_t VEC_SIZE, std::enable_if_t<(VEC_SIZE % 2 == 0), int> = 0>
 __device__ __forceinline__ void vec_convert(
     flashinfer::vec_t<__nv_fp8_e4m3, VEC_SIZE>& out, flashinfer::vec_t<__nv_bfloat16, VEC_SIZE> const& in)

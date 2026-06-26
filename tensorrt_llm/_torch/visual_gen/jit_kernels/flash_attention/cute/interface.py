@@ -57,6 +57,17 @@ def _get_device_capability():
     return torch.cuda.get_device_capability()[0]
 
 
+@lru_cache(maxsize=None)
+def _get_max_shared_memory_per_block():
+    """Return the max shared memory per block in bytes for the current device.
+
+    On SM100 full chips (e.g., B200) this is ~228KB, while on SM100f
+    variants like DGX Spark (GB10) it is only ~100KB.
+    """
+    props = torch.cuda.get_device_properties(torch.cuda.current_device())
+    return props.max_shared_memory_per_block
+
+
 def maybe_contiguous(x):
     return x.contiguous() if x is not None and x.stride(-1) != 1 else x
 
@@ -285,7 +296,14 @@ def _flash_attn_fwd(
         max_seqlen_k = seqlen_k
     seqlen_q_packgqa = max_seqlen_q * qhead_per_kvhead
     if compute_capability == 10:
-        q_stage = 2 if seqlen_q_packgqa > m_block_size else 1
+        # SM100f variants (e.g., GB10 / DGX Spark) have only ~100KB smem,
+        # not enough for q_stage=2. Fall back to q_stage=1 when smem is
+        # below 200KB (full SM100 chips have ~228KB).
+        max_smem = _get_max_shared_memory_per_block()
+        if seqlen_q_packgqa > m_block_size and max_smem >= 200 * 1024:
+            q_stage = 2
+        else:
+            q_stage = 1
     else:
         q_stage = 1
 
