@@ -71,7 +71,7 @@ class TestCuSeqlensToChunkIndicesOffsets:
 
 @skip_no_cuda
 class TestMamba2Metadata:
-    def test_prepare_populates_query_start_loc_for_pure_decode(self):
+    def test_prepare_populates_query_start_loc_for_pure_decode(self) -> None:
         metadata = Mamba2Metadata(max_batch_size=4, chunk_size=8)
 
         for batch_size in (3, 2):
