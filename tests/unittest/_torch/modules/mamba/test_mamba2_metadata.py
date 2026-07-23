@@ -71,6 +71,28 @@ class TestCuSeqlensToChunkIndicesOffsets:
 
 @skip_no_cuda
 class TestMamba2Metadata:
+    def test_prepare_populates_query_start_loc_for_pure_decode(self):
+        metadata = Mamba2Metadata(max_batch_size=4, chunk_size=8)
+
+        for batch_size in (3, 2):
+            seq_lens = torch.ones(batch_size, dtype=torch.int)
+            attn_metadata = SimpleNamespace(
+                seq_lens=seq_lens,
+                seq_lens_cuda=seq_lens.cuda(),
+                num_contexts=0,
+                num_ctx_tokens=0,
+                kv_cache_manager=None,
+                request_ids=None,
+            )
+
+            metadata.prepare(attn_metadata)
+
+            expected = torch.arange(batch_size + 1, dtype=torch.int32, device="cuda")
+            assert metadata.query_start_loc.shape == (batch_size + 1,)
+            assert metadata.query_start_loc.dtype == torch.int32
+            torch.testing.assert_close(metadata.query_start_loc, expected)
+            assert metadata.query_start_loc.data_ptr() == metadata._arange_buffer.data_ptr()
+
     def test_prepare_handles_tensor_cached_tokens(self):
         metadata = Mamba2Metadata(max_batch_size=4, chunk_size=8)
         seq_lens = torch.tensor([4, 3], dtype=torch.int)
