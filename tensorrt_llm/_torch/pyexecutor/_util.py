@@ -1042,7 +1042,8 @@ class KvCacheCreator:
     def _should_create_separate_draft_kv_cache(self) -> bool:
         """
         Check if we need a separate draft KV cache manager for one-model mode.
-        Returns True if the speculative config has use_separate_draft_kv_cache=True.
+        Returns True when the speculative config requests one and the
+        attention backend supports swapping the complete draft cache view.
 
         Note: For MTP, _draft_config may be None since MTP layers are embedded
         in the target model and don't produce a separate ModelConfig. We fall
@@ -1052,6 +1053,13 @@ class KvCacheCreator:
             logger.info(
                 "Attention DP is enabled, separate draft KV cache is not supported."
             )
+            return False
+        attn_backend = self._llm_args.attn_backend.upper()
+        if attn_backend != "TRTLLM":
+            logger.info(
+                "Separate draft KV cache is not supported with "
+                "attn_backend=%s; falling back to the combined target and "
+                "draft KV cache layout.", attn_backend)
             return False
         return should_use_separate_draft_kv_cache(self._speculative_config)
 
