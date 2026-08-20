@@ -8,8 +8,8 @@ import math
 import os
 import time
 from dataclasses import dataclass
-from typing import (Any, Dict, Generic, Iterator, List, Literal, Optional,
-                    Tuple, Type, TypeVar, Union)
+from typing import (TYPE_CHECKING, Any, Dict, Generic, Iterator, List, Literal,
+                    Optional, Tuple, Type, TypeVar, Union)
 
 import torch
 from torch import nn
@@ -34,6 +34,9 @@ from ..modules.logits_processor import LogitsProcessor
 from ..modules.rms_norm import RMSNorm
 from ..speculative import SpecMetadata
 from ._arch_index import MODEL_ARCH_TO_MODULE, is_builtin_zoo_module
+
+if TYPE_CHECKING:
+    from .checkpoints.base_weight_mapper import BaseWeightMapper
 
 
 @contextlib.contextmanager
