@@ -34,6 +34,7 @@ l0_cpu:
   - unittest/_torch/models/checkpoints
   - unittest/_torch/models/test_fused_moe_ignored_layers.py
   - unittest/_torch/models/test_laguna_gproj_quant.py
+  - unittest/_torch/models/test_modeling_utils.py
   - unittest/_torch/modules
   - unittest/_torch/multimodal
   - unittest/_torch/ray_orchestrator/single_gpu/test_cache_transceiver_comm.py

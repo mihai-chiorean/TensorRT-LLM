@@ -1544,7 +1544,8 @@ def _load_weights_impl_v2(model: Union[nn.Module, DecoderModelForCausalLM],
                     n,
                     p,
                     allow_partial_loading=allow_partial_loading)
-                loaded_own_params.append(n)
+                if n in module_weights:
+                    loaded_own_params.append(n)
 
         # Consume precisely what was loaded; see the matching comment in
         # `_load_weights_impl`.
