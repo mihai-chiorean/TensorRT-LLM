@@ -3234,7 +3234,11 @@ class MXFP8LinearMethod(LinearMethodBase):
         uses the reference path, never the unsupported native GEMM.
 
     ``TRTLLM_MXFP8_GEMM_BACKEND`` can explicitly select ``trtllm``,
-    ``flashinfer``, or ``auto``. The reference layout is 2D [O,K/32]; both
+    ``flashinfer``, or ``auto``. ``TRTLLM_MXFP8_FLASHINFER_BACKEND`` defaults
+    to ``cutlass``; experimental ``b12x`` selects only validated SM121 BF16
+    shapes, retaining CUTLASS for other FlashInfer calls. Run eager warmup
+    before graph capture so FlashInfer can validate B12x dependencies.
+    The reference layout is 2D [O,K/32]; both
     compiled backends consume the same 1D padded swizzled scale layout.
     When the TensorRT-LLM autotuner is enabled, the native backend profiles
     its compiled tactics during startup. Learned tactics are registered in
@@ -3265,6 +3269,19 @@ class MXFP8LinearMethod(LinearMethodBase):
         if self.backend not in ("trtllm", "flashinfer", "auto"):
             raise ValueError("TRTLLM_MXFP8_GEMM_BACKEND must be 'trtllm', "
                              f"'flashinfer', or 'auto', got {self.backend!r}")
+        self._flashinfer_backend_request = os.environ.get(
+            "TRTLLM_MXFP8_FLASHINFER_BACKEND", "cutlass")
+        if self._flashinfer_backend_request not in ("cutlass", "b12x"):
+            raise ValueError(
+                "TRTLLM_MXFP8_FLASHINFER_BACKEND must be 'cutlass' or 'b12x', "
+                f"got {self._flashinfer_backend_request!r}")
+        self._b12x_device = None
+        self._b12x_shape_eligible = False
+        if (self._flashinfer_backend_request == "b12x" and self._is_sm12x
+                and self.uses_flashinfer
+                and torch.cuda.get_device_capability() == (12, 1)):
+            self._b12x_device = torch.device("cuda",
+                                             torch.cuda.current_device())
         self._flashinfer_mxfp8 = None
         self._flashinfer_quantize = None
         self._flashinfer_interleave = None
@@ -3272,7 +3289,7 @@ class MXFP8LinearMethod(LinearMethodBase):
         if self.backend == "flashinfer":
             self._load_flashinfer(required=True)
         elif self.backend == "auto" and not self._load_flashinfer(
-                required=False):
+                required=self._b12x_device is not None):
             self.backend = "trtllm"
 
     @property
@@ -3374,6 +3391,12 @@ class MXFP8LinearMethod(LinearMethodBase):
                                       and out_features >= 128
                                       and out_features % 32 == 0 and dtype
                                       in (torch.bfloat16, torch.float16))
+        self._b12x_shape_eligible = (self._b12x_device is not None
+                                     and self._use_flashinfer_sm12x
+                                     and in_features % 128 == 0
+                                     and dtype == torch.bfloat16
+                                     and (out_features, in_features)
+                                     in ((16384, 2560), (2560, 6144)))
         if self._is_sm12x and not self._use_flashinfer_sm12x:
             logger.warning_once(
                 "SM12x MXFP8 Linear uses the dequantization reference path: "
@@ -3425,6 +3448,14 @@ class MXFP8LinearMethod(LinearMethodBase):
             if use_flashinfer:
                 flashinfer_mxfp8 = self._flashinfer_mxfp8
                 assert flashinfer_mxfp8 is not None
+                # Keep the opt-in within the measured device/dtype/M envelope.
+                fi_backend = "cutlass"
+                if (self._b12x_shape_eligible
+                        and input.device == self._b12x_device
+                        and input.dtype == torch.bfloat16
+                        and module.dtype == torch.bfloat16
+                        and input.shape[0] in (1, 4, 16)):
+                    fi_backend = "b12x"
                 output = flashinfer_mxfp8(
                     act_e4m3,
                     module.weight.t(),
@@ -3432,7 +3463,7 @@ class MXFP8LinearMethod(LinearMethodBase):
                     module.weight_scale,
                     out_dtype=module.dtype,
                     use_8x4_sf_layout=False,
-                    backend="cutlass",
+                    backend=fi_backend,
                 )
             else:
                 # globalScale is the alpha multiplier; pure MXFP8xMXFP8 uses 1.0.

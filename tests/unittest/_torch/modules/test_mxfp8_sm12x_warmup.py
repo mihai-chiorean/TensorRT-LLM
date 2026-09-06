@@ -92,13 +92,15 @@ def engine_module(linear_module: ModuleType, monkeypatch: pytest.MonkeyPatch) ->
 
 
 @pytest.mark.parametrize("backend", [None, "auto", "flashinfer"])
-@pytest.mark.parametrize("out_features", [96, 128])
+@pytest.mark.parametrize("out_features", [96, 128, 2560])
+@pytest.mark.parametrize("fi_backend", ["cutlass", "b12x"])
 def test_sm121_missing_warmup_preserves_backend_intent_and_scale_layout(
     linear_module: ModuleType,
     engine_module: ModuleType,
     monkeypatch: pytest.MonkeyPatch,
     backend: str | None,
     out_features: int,
+    fi_backend: str,
 ) -> None:
     native = _mock_device(monkeypatch, (12, 1))
     native.block_scale_interleave.side_effect = lambda scale: scale.flatten()
@@ -106,17 +108,21 @@ def test_sm121_missing_warmup_preserves_backend_intent_and_scale_layout(
     flashinfer.autotune.side_effect = lambda: nullcontext()
     if backend is not None:
         monkeypatch.setenv("TRTLLM_MXFP8_GEMM_BACKEND", backend)
+    monkeypatch.setenv("TRTLLM_MXFP8_FLASHINFER_BACKEND", fi_backend)
     method = linear_module.MXFP8LinearMethod()
     layer = nn.Module()
     layer.dtype = torch.bfloat16
-    method.create_weights(layer, 128, out_features, bias=False, dtype=layer.dtype)
+    in_features = 6144 if out_features == 2560 else 128
+    method.create_weights(layer, in_features, out_features, bias=False, dtype=layer.dtype)
     layer.weight.data.copy_(torch.ones_like(layer.weight, dtype=torch.bfloat16))
-    method._store_scale(layer, torch.full((out_features, 4), 127, dtype=torch.uint8))
+    method._store_scale(
+        layer, torch.full((out_features, in_features // 32), 127, dtype=torch.uint8)
+    )
     weight_bytes = layer.weight.view(torch.uint8).clone()
     scale_bytes = layer.weight_scale.clone()
     weight_pointer = layer.weight.data_ptr()
     scale_pointer = layer.weight_scale.data_ptr()
-    eligible = out_features == 128
+    eligible = out_features >= 128
     assert method.needs_flashinfer_autotune is eligible
     assert method.backend == (backend or "auto")
 
@@ -160,6 +166,7 @@ def test_sm121_missing_warmup_preserves_backend_intent_and_scale_layout(
 
     assert method.backend == (backend or "auto")
     assert method._use_flashinfer_sm12x is eligible
+    assert method._b12x_shape_eligible is (fi_backend == "b12x" and out_features == 2560)
     assert not method._flashinfer_autotuned and not method.needs_native_autotune
     assert layer.weight.data_ptr() == weight_pointer
     assert layer.weight_scale.data_ptr() == scale_pointer
@@ -177,8 +184,8 @@ def test_sm121_missing_warmup_preserves_backend_intent_and_scale_layout(
 
     # After a skipped optional pass, execute the chosen path outside tuning or capture.
     if not should_raise:
-        x = torch.ones((1, 128), dtype=torch.bfloat16)
-        expected = torch.full((1, out_features), 128, dtype=torch.bfloat16)
+        x = torch.ones((1, in_features), dtype=torch.bfloat16)
+        expected = torch.full((1, out_features), in_features, dtype=torch.bfloat16)
         flashinfer.mxfp8_quantize.return_value = (
             x.to(torch.float8_e4m3fn),
             torch.full((512,), 127, dtype=torch.uint8),
