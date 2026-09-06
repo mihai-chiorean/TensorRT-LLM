@@ -25,6 +25,7 @@ def main() -> None:
     if config.get("language_model_only") is not True:
         parser.error("prepare a text-only checkpoint view first with prepare_model.py")
     os.environ.setdefault("LLM_MODELS_ROOT", str(args.model.parent))
+    os.environ.setdefault("TLLM_LOAD_WEIGHTS_NUM_WORKERS", "1")
 
     import torch
 
@@ -32,7 +33,7 @@ def main() -> None:
     from tensorrt_llm.llmapi import KvCacheConfig, MoeConfig, MTPDecodingConfig
 
     prompts = json.loads(args.prompts.read_text())
-    spec_config = MTPDecodingConfig(num_nextn_predict_layers=args.mtp) if args.mtp else None
+    spec_config = MTPDecodingConfig(max_draft_len=args.mtp) if args.mtp else None
     started = time.perf_counter()
     llm = LLM(
         model=str(args.model),
@@ -79,6 +80,7 @@ def main() -> None:
         "mtp": args.mtp,
         "moe_backend_requested": args.moe_backend,
         "autotuner": args.autotune,
+        "loader_workers": os.environ["TLLM_LOAD_WEIGHTS_NUM_WORKERS"],
         "max_seq_len": 2048,
         "requests": records,
     }
