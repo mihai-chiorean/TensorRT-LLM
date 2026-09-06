@@ -42,9 +42,14 @@ both engines; do not search arbitrary output for a matching answer.
 
 The ledger queries exercise early, middle, and late positions in a short prompt;
 they do not validate long-context retrieval. Eight cases are a bounded regression
-gate, not general model-quality evidence. `benchmark_api.py` does not score the
-quality file: a runner must extract `cases[*].prompt` and retain the case-ID map
-separately. This sidecar adds data only, not an evaluator or execution sandbox.
+gate, not general model-quality evidence. Export only the prompts with
+`python scripts/flashnext/score_quality.py --prompts-output /tmp/quality-prompts.json`,
+then pass that file to `benchmark_api.py --prompts`. Score the saved report with
+`python scripts/flashnext/score_quality.py --report /path/to/report.json`.
+The scorer accepts exactly one optional leading `<think>...</think>` block and
+never searches it for answers. Python cases remain pending manual review;
+the scorer does not execute generated code. Exit codes are 0 for all passed,
+1 for failed cases, 2 for invalid inputs, and 3 for pending manual review.
 
 ## Throughput Boundaries
 
