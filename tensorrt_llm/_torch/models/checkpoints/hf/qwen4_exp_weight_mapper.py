@@ -78,6 +78,7 @@ from torch import nn
 from tensorrt_llm._torch.models.checkpoints.hf.qwen2_moe_weight_mapper import Qwen2MoeHfWeightMapper
 from tensorrt_llm._torch.models.modeling_utils import register_mapper
 from tensorrt_llm._torch.modules.qwen4_exp.ple import Qwen4ExpPinnedHostEmbedding
+from tensorrt_llm._torch.modules.qwen4_exp.ple_nvfp4 import Qwen4ExpNVFP4MmapEmbedding
 from tensorrt_llm._torch.moe.fused_moe.interface import MoEWeightLoadingMode
 from tensorrt_llm._torch.moe.fused_moe.weight_owner import is_moe_weight_owner
 from tensorrt_llm._torch.utils import split
@@ -534,17 +535,32 @@ class Qwen4ExpHfWeightMapper(Qwen2MoeHfWeightMapper):
             if getattr(module, "_weights_removed", False):
                 continue
 
+            # Bind packed CPU views before the dense/FP8 streaming path. In
+            # NVFP4 each shard has both weight and weight_scale leaves, which
+            # must not be mistaken for two independent table shards.
+            is_nvfp4 = isinstance(module.ngram_embedding, Qwen4ExpNVFP4MmapEmbedding)
+            if is_nvfp4:
+                if module.tp_size != 1:
+                    raise NotImplementedError("PLE NVFP4 mmap storage currently requires TP=1")
+                module.ngram_embedding.bind_shards(leaves)
+            elif "ngram_embedding.weight_scale_2" in leaves:
+                raise ValueError("PLE NVFP4 checkpoint requires ple_embedding_dtype='nvfp4'")
+
             # Metadata buffers (recurrent-hash constants): load the checkpoint's
             # authoritative values into the module's registered buffers.
             for leaf in buffer_leaves:
                 if leaf in leaves:
                     buf = getattr(module, leaf)
-                    if tuple(leaves[leaf].shape) != tuple(buf.shape):
+                    source = leaves[leaf][:]
+                    if tuple(source.shape) != tuple(buf.shape):
                         raise ValueError(
                             f"PLE metadata {ple_prefix}.{leaf} has shape "
-                            f"{tuple(leaves[leaf].shape)}, expected {tuple(buf.shape)}"
+                            f"{tuple(source.shape)}, expected {tuple(buf.shape)}"
                         )
-                    buf.data.copy_(leaves[leaf][:].to(buf.dtype))
+                    buf.data.copy_(source.to(buf.dtype))
+
+            if is_nvfp4:
+                continue
 
             # N-gram table shards: copy only the overlap with this rank's row
             # partition. This works for replicated, TP, and attention-DP tables

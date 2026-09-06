@@ -40,6 +40,7 @@ from .ple_kernels import (
     ple_ngram_hash,
     ple_short_conv_state,
 )
+from .ple_nvfp4 import Qwen4ExpNVFP4MmapEmbedding
 
 # SplitMix64 constants are part of the checkpoint's PLE hashing contract.
 _MASK64 = (1 << 64) - 1
@@ -506,7 +507,12 @@ class Qwen4ExpNGramEmbedding(nn.Module):
         if self.tp_size <= 0 or not 0 <= self.tp_rank < self.tp_size:
             raise ValueError("PLE received an invalid tensor-parallel mapping")
         self.embedding_output_dtype = dtype
-        self.host_offload = _uses_ple_host_offload()
+        self.nvfp4_storage = getattr(config, "ple_embedding_dtype", None) == "nvfp4"
+        self.host_offload = self.nvfp4_storage or _uses_ple_host_offload()
+        if self.nvfp4_storage and self.tp_size != 1:
+            raise NotImplementedError("PLE NVFP4 mmap storage currently requires TP=1")
+        if self.nvfp4_storage and dtype != torch.bfloat16:
+            raise TypeError("PLE NVFP4 mmap storage requires BF16 model activations")
         self.use_attention_dp_sharding = bool(
             mapping is not None and mapping.enable_attention_dp and self.tp_size > 1
         )
@@ -571,7 +577,15 @@ class Qwen4ExpNGramEmbedding(nn.Module):
         slice_width = math.ceil(padded_vocab_size / self.tp_size)
         self.vocab_start_index = self.tp_rank * slice_width
         self.vocab_end_index = min((self.tp_rank + 1) * slice_width, padded_vocab_size)
-        if self.host_offload:
+        if self.nvfp4_storage:
+            self.ngram_embedding = Qwen4ExpNVFP4MmapEmbedding(
+                padded_vocab_size,
+                self.head_dim_per_ngram,
+                expected_shards=getattr(config, "split_ngram_parts", None),
+            )
+            self.embedding_allreduce = None
+            logger.info("PLE n-gram table uses NVFP4 CPU mmap storage (eager-only, TP=1)")
+        elif self.host_offload:
             if dtype != torch.bfloat16:
                 raise TypeError(
                     "PLE host offload currently gathers BF16 activations; "
@@ -878,7 +892,8 @@ class Qwen4ExpNGramEmbedding(nn.Module):
         if ngram_ids.dtype not in (torch.int32, torch.int64):
             raise ValueError("PLE n-gram IDs must use integer storage")
         if (
-            self.ngram_embedding.weight.dtype == torch.float8_e4m3fn
+            not self.nvfp4_storage
+            and self.ngram_embedding.weight.dtype == torch.float8_e4m3fn
             and self.ngram_embedding_weight_scale is None
         ):
             # FP8 table values are checkpoint integers in a scaled storage
@@ -1084,6 +1099,10 @@ class Qwen4ExpPLE(nn.Module):
         ngram_context: torch.Tensor,
     ) -> None:
         """Start the sparse host lookup before execution reaches the PLE layer."""
+        if self.ple_embedding.nvfp4_storage:
+            self.ple_embedding.ngram_embedding.check_eager(
+                ngram_context.device, is_cuda_graph=metadata.is_cuda_graph
+            )
         prefetch_stream = self._prefetch_stream
         if prefetch_stream is None:
             return
@@ -1341,6 +1360,10 @@ class Qwen4ExpPLE(nn.Module):
             hidden stream before attention (zero for padded / invalid tokens).
         """
         m = metadata
+        if self.ple_embedding.nvfp4_storage:
+            self.ple_embedding.ngram_embedding.check_eager(
+                hidden_states.device, is_cuda_graph=m.is_cuda_graph
+            )
         hc_dim = self.hc_count * self.hidden_size
         if hidden_states.ndim != 2 or hidden_states.shape[-1] != hc_dim:
             raise RuntimeError(
