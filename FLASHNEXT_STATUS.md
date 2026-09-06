@@ -19,9 +19,12 @@ is claimed until measured. Keep spark-094a's working deployment unchanged.
   at `ef1af5fa2e1e93d4bd96136568460cda843ccc29`.
 - Initial isolated runtime: `nvcr.io/nvidia/tensorrt-llm/release:1.3.0rc25`,
   Torch `2.12.0a0+5aff3928d8.nv26.05`, FlashInfer `0.6.16`, transformers `5.5.4`.
-  Python/native source compatibility with current main is not yet established.
+  Its native library was too old for current Python sources and was replaced.
 - FlashInfer was upgraded inside the isolated container to `0.6.18`, matching
-  current main. Current-main native build is running at four compile jobs.
+  current main. Six core native artifacts built from `70feda6395` are staged;
+  genuine package, `LLM`, and `PyTorchModelEngine` imports pass. Optional rc25
+  extensions were retained, not rebuilt; this is not a clean release wheel.
+  Upstream import-path fix `75f521dd` was cherry-picked as `34af9d83`.
 - Signed fork commits: `f74e6657` (configuration/precision normalization) and
   `23872afa` (bounded eager NVFP4 PLE loading). Both passed commit hooks and
   were pushed. Neither is claimed as full-model validated yet.
@@ -85,15 +88,28 @@ bounded. Reassess available host memory before every model load.
 - `ed8858ea`: SM12x MXFP8 native gate, FlashInfer routing and backend intent:
   36 isolated dispatch/engine tests pass, including existing SM100 behavior.
   Actual edited linear methods passed three SM121 numerical probes. Full
-  TensorRT runtime import is still waiting on the native build.
+  runtime imports now pass against the freshly built core libraries.
 - Combined CPU PLE/helper/MXFP8 dispatch run: 96 passed, six GPU-only skips,
   13 subtests passed. Six additional isolated engine-warmup cases passed.
 - B12x MXFP8: six GDN shapes at M=1/4/16 passed an independent FP32 reference
   and changed-input graph tests. Outputs match CUTLASS bit-for-bit. Component
   timings favor B12x, but no end-to-end speedup is claimed.
 - Bug ledger: [scripts/flashnext/BUGS.md](scripts/flashnext/BUGS.md).
-- Native build and resumable weight transfer remain active. No full-model
-  TensorRT generation has run. Initial smoke disables autotuning explicitly;
+- Real-runtime tests: 69 config/GDN/PLE integration cases passed; a subsequent
+  24-case consumption/GDN/PLE run passed with `2d95b4db`, which preserves
+  incremental weight consumption through Qwen4 preprocessing. No full-load
+  memory reduction has been measured yet.
+- Consolidated real-runtime regression run: 177 passed, two CUDA-named cases
+  deselected. Includes upstream import regressions, config/quantization,
+  GDN mapping, consumption, PLE, and SM12x MXFP8 dispatch/warmup tests.
+- Native QSA Top-K at K=512 passed short/empty rows, radix-dispatch boundaries,
+  exact set selection and changed-input graph replay. Peak 80 MiB CUDA and
+  1.70 GiB host RSS. Complete attention-layer validation is in progress.
+- `ea1bdd87`: strict offline quality scorer and 109 scorer/client tests passed.
+  It never executes generated code; the code case stays pending manual review.
+- Native core build completed after resolving one pinned Git LFS header.
+  Artifact staging/import validation and resumable weight transfer remain
+  outstanding. No full-model TensorRT generation has run. Initial smoke disables autotuning explicitly;
   enable it with `--autotune` for a separately recorded tuning experiment.
 
 ## Benchmark Gates
@@ -113,10 +129,10 @@ bounded. Reassess available host memory before every model load.
 
 Installed rc25 imports and CUDA visibility pass. Overlaying main does not:
 `trtllm::silu_and_mul_fp8_quantize_1x128_packed_ue8m0` is missing from its
-compiled library. A current-source native build is being prepared; no stub
+compiled library. A current-source native build has completed; no stub
 operator workaround is accepted as validation.
 
-Isolated PLE tests: 54 passed, one CUDA test skipped; six isolated integration
+Initial isolated PLE tests: 54 passed, one CUDA test skipped; six isolated integration
 cases passed. Config/quantization harness: 51 focused plus five existing
 regressions passed. Checkpoint-view and API benchmark helper tests: 15 passed.
 These are not a substitute for full-runtime pytest.
@@ -133,6 +149,14 @@ MTP3, max sequences 4, native 262144 context, FP8 KV) completed:
 
 At concurrency 2, the two cap128 requests produced 256 output tokens at
 52.99 aggregate tok/s, with amortized decode estimates 35.70 and 28.71 ms/token.
+
+Read-only inspection qualifies the actual reference paths: target MoE is
+W4A4 FlashInfer CUTLASS, MTP experts are W4A16 Marlin, dense MXFP8 uses dynamic
+A8 CUTLASS, and N96 uses cached BF16 emulation. Installed config/allocation
+code selects FP32 recurrent state, not the recipe's advertised BF16 state.
+Main KV uses fixed-scale E4M3; unit scales are consistent with initialization
+and checkpoint headers, but resident scale values were not inspected. These
+precision families guide the matched comparison; kernel equivalence is unproven.
 
 Arithmetic answer was 80 km/h. Hash-table output was coherent but truncated.
 This is an initial short-prompt reference, not a controlled throughput sweep.
@@ -159,16 +183,19 @@ are kernel-probe timings, not this model's width-160 or full-model timings.
 Important memory finding: GPU reads through the default writable SafeTensors
 mapping caused private-dirty/anonymous pages. An independently owned read-only
 mapping kept zero anonymous, private-dirty and locked pages in the probe and
-remained reclaimable. The runtime implementation must open fresh read-only
-mappings; it must not change protection on shared loader mappings. A separate
-GPU delegate with width-160/128-shard tests is being implemented.
+remained reclaimable. The runtime implementation opens fresh read-only
+mappings and does not change protection on shared loader mappings. The GPU
+delegate and width-160/128-shard tests are implemented; full-load pressure is
+still unvalidated.
 
 ## Active Operations and Resume Points
 
 - Deployment container: `trtllm-flashnext` on `mihai@spark-3883.local`.
-- Current native build log (inside container):
-  `/opt/flashnext-build-70feda/logs/build-resume.log`. The older `build.log`
-  stopped before the resumed build; do not use it as a liveness indicator.
+- Completed native build log (inside container):
+  `/opt/flashnext-build-70feda/logs/build-lfs-resume.log`. The earlier
+  `build-resume.log` stopped at an unresolved Git LFS header; `build.log`
+  predates both resumes. The latest build completed at eight jobs within the
+  existing memory/CPU bounds; artifact staging and genuine imports passed.
 - Native build source is a separate clean upstream tree; parent Python edits
   are in `/home/mihai/workspace/TensorRT-LLM-FlashNext` locally and need a final
   synchronization to the corresponding Spark workspace before validation.
@@ -201,3 +228,11 @@ GPU delegate with width-160/128-shard tests is being implemented.
 - Both Spark Ethernet interfaces are currently down. The checkpoint copy is
   read-only from 094a over Wi-Fi, seeded with completed pinned HF downloads.
   Dataset transfer is resumable and may take hours at current link speed.
+- Verify effective cgroups, not Docker configuration alone. The declared
+  84 GiB/no-extra-swap limit initially left `memory.swap.max=max`. Reapplying
+  `docker update --memory 84g --memory-swap 84g trtllm-flashnext` set it to zero;
+  host-cgroup readings confirm 84 GiB memory, zero swap and no OOM events.
+- Header-only memory audit estimates 69.87 GiB persistent text GPU weights,
+  plus 26.82 GiB reclaimable file-backed PLE. Optional MTP adds about 1.49 GiB
+  weights and a 4.69 GiB CUTLASS BF16 workspace. These are estimates, not
+  measured full-load peaks. Use one loader worker for initial admission.

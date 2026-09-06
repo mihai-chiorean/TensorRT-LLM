@@ -69,6 +69,31 @@ These are experimental implementation mistakes, not claims about upstream.
 | Writable GPU mmap destroys reclaimability | Isolated probe found GPU access through default writable SafeTensors mappings created private-dirty/anonymous pages. | GPU delegate opens independent read-only mappings. Small-file tests observed zero anonymous/private-dirty/locked pages and successful own-file reclaim. Full-model pressure validation pending. |
 | Benchmark can misstate speculative performance | Text-event count is not token count; a one-event response cannot expose a decode interval. Failed streams could discard a whole batch's evidence. | Use server token usage, null unobservable decode estimates, validate termination/fixed length, preserve errors and partial results. 15 API/checkpoint helper tests pass. |
 
+## Build and Admission Findings
+
+- The first complete native compile stopped on a Git LFS pointer in
+  `trtllmGen_bmm_export/KernelMetaInfo.h`. Its pinned 7,286,260-byte object was
+  fetched and verified against SHA256
+  `08050119e223e4685acf4d337854f964d8eba22ef4878741550ca007c6762349`.
+  Resuming the existing build completed successfully. No C++ logic patch.
+- Docker declared memory and memory-swap limits of 84 GiB, but the effective
+  host cgroup initially allowed unlimited swap. Reapplying the Docker limits
+  set `memory.swap.max=0`; actual readings confirm the correction and no OOM
+  events. Root cause of the initial discrepancy is not established.
+- Header-only audit found that Qwen4Exp's mapper returns a plain dictionary,
+  losing lazy loader consumption and indexed prefix lookup. About 2.074 GiB
+  of fused CPU tensors remains referenced until loading completes. Fixed in
+  `2d95b4db`; 24 real-runtime consumption/GDN/PLE regressions pass. Peak memory
+  reduction remains unmeasured; no measured OOM claim.
+- QSA short-prompt eager geometry passed nine standalone SM121 kernel checks.
+  Native row-range Top-K additionally passed exact-set/padding checks and
+  changed-input graph replay at K=512, including the radix dispatch boundary.
+  Complete dense/sparse attention-layer integration remains pending.
+  Prefill graphs encounter data-dependent boolean indexing, and captured
+  dense/sparse selection cannot change merely by changing replay lengths.
+  Keep graphs off for initial validation; test threshold crossings and MTP
+  state rollback separately. These probes do not prove full-model correctness.
+
 ## Unvalidated Performance Opportunities
 
 1. FlashInfer 0.6.18 B12x MXFP8: six real GDN projection shapes (M=1/4/16)
