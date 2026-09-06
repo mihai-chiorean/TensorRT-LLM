@@ -1132,6 +1132,9 @@ class Qwen4ExpPLE(nn.Module):
         current_stream = torch.cuda.current_stream()
         prefetch_stream.wait_stream(current_stream)
         lookup_ids.record_stream(prefetch_stream)
+        # Abort followed by a larger retry can replace the backing buffer
+        # before this stream completes its asynchronous lookup.
+        prefetched.record_stream(prefetch_stream)
         with torch.cuda.stream(prefetch_stream):
             self.ple_embedding.ngram_embedding.gather(
                 lookup_ids,
