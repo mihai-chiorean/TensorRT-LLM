@@ -1,0 +1,77 @@
+{
+  "SPDX-FileCopyrightText": "Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.",
+  "SPDX-License-Identifier": "Apache-2.0",
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "math_speed",
+      "category": "arithmetic",
+      "answer_format": "json",
+      "prompt": "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\nA train travels 120 kilometers in 90 minutes at a constant speed. Calculate its speed in kilometers per hour. Your final answer must be only a JSON object with one key, speed_kmh, whose value is a number.<|im_end|>\n<|im_start|>assistant\n"
+    },
+    {
+      "id": "math_inventory",
+      "category": "arithmetic",
+      "answer_format": "json",
+      "prompt": "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\nA store starts with seven boxes containing 24 pencils each. It sells 19 pencils and receives 11 additional loose pencils. The store repacks all remaining pencils into full packs of 12. How many full packs and loose pencils remain? Your final answer must be only a JSON object with keys full_packs and loose_pencils, both with integer values.<|im_end|>\n<|im_start|>assistant\n"
+    },
+    {
+      "id": "json_filter_orders",
+      "category": "json_transform",
+      "answer_format": "json",
+      "prompt": "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\nProcess these orders: [{\"id\":\"a04\",\"status\":\"paid\",\"amount\":9},{\"id\":\"a01\",\"status\":\"pending\",\"amount\":50},{\"id\":\"a02\",\"status\":\"paid\",\"amount\":14},{\"id\":\"a03\",\"status\":\"cancelled\",\"amount\":7}]. Keep only orders whose status is paid. Sort their IDs in ascending order and sum their amounts. Your final answer must be only a JSON object with keys ids (an array of strings) and total (an integer).<|im_end|>\n<|im_start|>assistant\n"
+    },
+    {
+      "id": "json_spanish_sort",
+      "category": "multilingual_json",
+      "answer_format": "json",
+      "prompt": "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\nOrdena estos enteros de menor a mayor y elimina los duplicados: [7, -2, 7, 0, 4, -2, 4]. Devuelve como respuesta final solamente un objeto JSON con la clave values y la lista resultante. No traduzcas el nombre de la clave.<|im_end|>\n<|im_start|>assistant\n"
+    },
+    {
+      "id": "code_trace",
+      "category": "code_trace",
+      "answer_format": "json",
+      "prompt": "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\nTrace this Python 3 code without changing it:\nvalues = [3, 1, 3, 2, 1]\ncounts = {}\nfor value in values:\n    counts[value] = counts.get(value, 0) + 1\nresult = [[key, counts[key]] for key in sorted(counts) if counts[key] > 1]\nYour final answer must be only a JSON object with key result and the value of the Python variable result.<|im_end|>\n<|im_start|>assistant\n"
+    },
+    {
+      "id": "code_stable_unique",
+      "category": "code_generation",
+      "answer_format": "python",
+      "prompt": "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\nImplement a Python 3 function stable_unique(values). Its input is a list of integers. Return a new list containing each distinct integer once, preserving the order of its first occurrence. Do not mutate values. Handle empty lists and negative integers. Use only Python built-ins, with no imports, input/output, or top-level calls. Your final answer must contain only the function definition, without Markdown fences.<|im_end|>\n<|im_start|>assistant\n"
+    },
+    {
+      "id": "retrieval_positions",
+      "category": "short_retrieval",
+      "answer_format": "json",
+      "prompt": "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\nUse only this shipment ledger. Each shipment ID occurs once.\nS01: depot=west, crates=14\nS02: depot=north, crates=8\nS03: depot=east, crates=21\nS04: depot=south, crates=5\nS05: depot=west, crates=17\nS06: depot=east, crates=12\nS07: depot=north, crates=3\nS08: depot=south, crates=19\nS09: depot=east, crates=6\nS10: depot=west, crates=10\nS11: depot=south, crates=16\nS12: depot=north, crates=7\nReturn the depot for S01, the crate count for S06, and the depot for S12. Your final answer must be only a JSON object with keys first_depot, middle_crates, and last_depot.<|im_end|>\n<|im_start|>assistant\n"
+    },
+    {
+      "id": "retrieval_latest_missing",
+      "category": "short_retrieval",
+      "answer_format": "json",
+      "prompt": "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\nRead this complete assignment log in chronological order. A later entry for the same project replaces its earlier owner.\n09:00 project=cedar owner=Ana\n09:05 project=maple owner=Bo\n09:10 project=elm owner=Cai\n09:15 project=cedar owner=Dee\n09:20 project=maple owner=Ana\n09:25 project=elm owner=Bo\nWhat are the final owners of cedar and maple, and the owner of the absent project oak? Represent an absent project's owner as JSON null. Your final answer must be only a JSON object with keys cedar, maple, and oak.<|im_end|>\n<|im_start|>assistant\n"
+    }
+  ],
+  "expected_answers": {
+    "math_speed": {"speed_kmh": 80},
+    "math_inventory": {"full_packs": 13, "loose_pencils": 4},
+    "json_filter_orders": {"ids": ["a02", "a04"], "total": 23},
+    "json_spanish_sort": {"values": [-2, 0, 4, 7]},
+    "code_trace": {"result": [[1, 2], [3, 2]]},
+    "code_stable_unique": {
+      "function": "stable_unique",
+      "preserves_input": true,
+      "returns_new_list": true,
+      "tests": [
+        {"input": [], "output": []},
+        {"input": [4], "output": [4]},
+        {"input": [3, 1, 3, 2, 1], "output": [3, 1, 2]},
+        {"input": [-2, 0, -2, -1, 0], "output": [-2, 0, -1]},
+        {"input": [9, 9, 9], "output": [9]},
+        {"input": [5, 4, 3, 2, 1], "output": [5, 4, 3, 2, 1]}
+      ]
+    },
+    "retrieval_positions": {"first_depot": "west", "middle_crates": 12, "last_depot": "north"},
+    "retrieval_latest_missing": {"cedar": "Dee", "maple": "Ana", "oak": null}
+  }
+}

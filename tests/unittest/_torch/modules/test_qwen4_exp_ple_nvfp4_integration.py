@@ -55,11 +55,13 @@ def test_nvfp4_auto_selects_storage_before_dense_allocation(
     config.heads_per_ngram = 8
     config.ngram_vocab_size_base = 20_000_000
     config.make_ngram_vocab_size_divisible_by = 128
+    config.split_ngram_parts = 128
     module = ple.Qwen4ExpNGramEmbedding(config, embedding_dim=2560, dtype=torch.bfloat16)
     assert module.nvfp4_storage and module.host_offload
     assert isinstance(module.ngram_embedding, Qwen4ExpNVFP4MmapEmbedding)
     assert module.head_dim_per_ngram == 160 and module.ngram_heads == 16
-    assert module.ngram_embedding.num_embeddings > 320_000_000
+    assert module.ngram_embedding.num_embeddings == 320_001_536
+    assert module.ngram_embedding.expected_shards == 128
     assert list(module.ngram_embedding.parameters()) == []
     assert module.ngram_embedding._shards == ()
 
