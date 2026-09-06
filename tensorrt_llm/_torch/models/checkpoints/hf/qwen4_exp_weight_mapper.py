@@ -271,6 +271,7 @@ class Qwen4ExpHfWeightMapper(Qwen2MoeHfWeightMapper):
         renamed: dict = {}
         # layer_prefix -> {"qkv"/"z"/"a"/"b": tensor}
         gdn_in_proj: dict = {}
+        gdn_in_proj_scales: dict = {}
         # layer_prefix -> {shard_i / buffer_name: tensor}
         ngram: dict = {}
         # HC module prefix -> {down/inject: tensor}. Mix-only final heads only
@@ -301,10 +302,20 @@ class Qwen4ExpHfWeightMapper(Qwen2MoeHfWeightMapper):
                 if layer_index not in owned_layer_ids:
                     continue
 
+            # Keep mmap storage ownership while exposing tensor metadata to
+            # projection fusion and the generic module loaders. No copy occurs.
+            if not isinstance(tensor, torch.Tensor):
+                tensor = tensor[()] if len(tensor.get_shape()) == 0 else tensor[:]
+
             if ".linear_attn.in_proj_" in key and key.endswith(".weight"):
                 prefix, proj = key.rsplit(".in_proj_", 1)
                 proj = proj[: -len(".weight")]  # qkv | z | a | b
                 gdn_in_proj.setdefault(prefix, {})[proj] = tensor
+                continue
+            if ".linear_attn.in_proj_" in key and key.endswith(".weight_scale"):
+                prefix, proj = key.rsplit(".in_proj_", 1)
+                proj = proj[: -len(".weight_scale")]
+                gdn_in_proj_scales.setdefault(prefix, {})[proj] = tensor
                 continue
             if (
                 self._NGRAM_EMBED_MARKER in key
@@ -421,6 +432,32 @@ class Qwen4ExpHfWeightMapper(Qwen2MoeHfWeightMapper):
                 )
             new_weights[f"{prefix}.in_proj_qkvz.weight"] = qkvz
             new_weights[f"{prefix}.in_proj_ba.weight"] = ba
+
+            scales = gdn_in_proj_scales.pop(prefix, None)
+            if scales is not None:
+                if scales.keys() != parts.keys():
+                    raise ValueError(f"{prefix} requires MXFP8 scales for every in-proj projection")
+                for projection, scale in scales.items():
+                    expected = (parts[projection].shape[0], config.hidden_size // 32)
+                    if config.hidden_size % 32 or tuple(scale.shape) != expected:
+                        raise ValueError(
+                            f"{prefix}.in_proj_{projection}.weight_scale has shape "
+                            f"{tuple(scale.shape)}, expected {expected}"
+                        )
+                    if scale.dtype != torch.uint8 or parts[projection].dtype != torch.float8_e4m3fn:
+                        raise ValueError(f"{prefix} requires E4M3 weights and uint8 MXFP8 scales")
+                q_scale, k_scale, v_scale = torch.split(
+                    scales["qkv"][:], [key_dim, key_dim, value_dim], dim=0
+                )
+                new_weights[f"{prefix}.in_proj_qkvz.weight_scale"] = _rank_block(
+                    [q_scale, k_scale, v_scale, scales["z"][:]], tp_size
+                )
+                new_weights[f"{prefix}.in_proj_ba.weight_scale"] = _rank_block(
+                    [scales["b"][:], scales["a"][:]], tp_size
+                )
+
+        if gdn_in_proj_scales:
+            raise ValueError("Qwen4-Exp has GDN in-proj scales without corresponding weights")
 
         # Pack each layer's HC down and injection projections into a single
         # aligned GEMM. Final mix-only heads have no injection projection and
