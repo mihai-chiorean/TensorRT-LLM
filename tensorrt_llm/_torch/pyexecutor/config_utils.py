@@ -311,6 +311,8 @@ def is_qwen4_exp(config: transformers.PretrainedConfig) -> bool:
     return bool(architectures) and architectures[0] in {
         "Qwen4ExpForCausalLM",
         "Qwen4ExpForConditionalGeneration",
+        "Qwen3_8FlashNextForCausalLM",
+        "Qwen3_8FlashNextForConditionalGeneration",
     }
 
 
@@ -712,7 +714,7 @@ def is_qwen4_exp_multimodal_config(config_dict: dict) -> bool:
     """Return whether a checkpoint contains the composite vision model."""
     text_config = config_dict.get("text_config")
     vision_config = config_dict.get("vision_config")
-    return (config_dict.get("model_type") == "qwen4_exp"
+    return (config_dict.get("model_type") in ("qwen4_exp", "qwen3_8_flash_next")
             and config_dict.get("language_model_only") is not True
             and isinstance(text_config, dict) and bool(text_config)
             and isinstance(vision_config, dict) and bool(vision_config))
@@ -858,7 +860,8 @@ def load_pretrained_config(model_name_or_path: str,
         model_config.text_config.architectures = ["Qwen4ExpForCausalLM"]
         model_config.text_config.torch_dtype = resolved_dtype
         model_config.torch_dtype = resolved_dtype
-    elif model_type in ("qwen4_exp", "qwen4_exp_text"):
+    elif model_type in ("qwen4_exp", "qwen4_exp_text", "qwen3_8_flash_next",
+                        "qwen3_8_flash_next_text"):
         from tensorrt_llm._torch.configs import Qwen4ExpTextConfig
         text_dict = dict(config_dict.get("text_config") or config_dict)
         quantization_config = _normalize_qwen4_exp_quantization_config(

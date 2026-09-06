@@ -104,6 +104,10 @@ class Qwen4ExpTextConfig(Qwen3NextConfig):
     model_type = "qwen4_exp_text"
 
     def __init__(self, **kwargs: object) -> None:
+        if kwargs.get("model_type") in ("qwen3_8_flash_next", "qwen3_8_flash_next_text"):
+            kwargs["model_type"] = self.model_type
+        if kwargs.get("architectures") == ["Qwen3_8FlashNextForCausalLM"]:
+            kwargs["architectures"] = ["Qwen4ExpForCausalLM"]
         _flatten_qwen4_exp_rope(kwargs)
         _normalize_qwen4_exp_layer_types(kwargs)
         # qwen4_exp is MoE-only and ships no dense ``intermediate_size``;
@@ -178,15 +182,19 @@ class Qwen4ExpConfig(PretrainedConfig):
         tie_word_embeddings: bool = False,
         **kwargs,
     ) -> None:
+        if kwargs.get("model_type") == "qwen3_8_flash_next":
+            kwargs["model_type"] = self.model_type
+        if kwargs.get("architectures") == ["Qwen3_8FlashNextForConditionalGeneration"]:
+            kwargs["architectures"] = ["Qwen4ExpForConditionalGeneration"]
         if isinstance(text_config, dict):
             text_config = Qwen4ExpTextConfig(**text_config)
         elif text_config is None:
             text_config = Qwen4ExpTextConfig()
         if isinstance(vision_config, dict):
-            # Early checkpoints used the composite model type for this nested
-            # block. The runtime class is unambiguous once it is nested here.
+            # Early checkpoints used the composite type; FlashNext uses the
+            # Qwen3.5 vision type. Normalize only inside this composite config.
             vision_config = dict(vision_config)
-            if vision_config.get("model_type") == "qwen4_exp":
+            if vision_config.get("model_type") in ("qwen4_exp", "qwen3_5_vision"):
                 vision_config["model_type"] = "qwen4_exp_vision"
             vision_config = Qwen4ExpVisionConfig(**vision_config)
         elif vision_config is None:

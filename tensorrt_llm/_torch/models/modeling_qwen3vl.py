@@ -1334,6 +1334,7 @@ class Qwen3VLModelBase(MultimodalModelMixin, PreTrainedModel):
             "Qwen3_5MoeForConditionalGeneration": "Qwen3_5MoeForCausalLM",
             "Qwen3_5ForConditionalGeneration": "Qwen3_5ForCausalLM",
             "Qwen4ExpForConditionalGeneration": "Qwen4ExpForCausalLM",
+            "Qwen3_8FlashNextForConditionalGeneration": "Qwen4ExpForCausalLM",
         }
         llm_arch = vlm_to_llm_arch.get(self.original_arch)
         if llm_arch is None:

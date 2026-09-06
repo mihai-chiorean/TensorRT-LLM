@@ -188,6 +188,8 @@ def _normalize_moe_module_weights(
     return updated, MoEWeightLoadingMode.FUSED_GATE_UP_PROJ
 
 
+@register_mapper("HF", "Qwen3_8FlashNextForConditionalGeneration")
+@register_mapper("HF", "Qwen3_8FlashNextForCausalLM")
 @register_mapper("HF", "Qwen4ExpForConditionalGeneration")
 @register_mapper("HF", "Qwen4ExpForCausalLM")
 class Qwen4ExpHfWeightMapper(Qwen2MoeHfWeightMapper):

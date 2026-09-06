@@ -81,6 +81,8 @@ def _register_custom_configs_with_transformers() -> None:
         "qwen4_exp_text": Qwen4ExpTextConfig,
         "qwen4_exp": Qwen4ExpConfig,
         "qwen4_exp_vision": Qwen4ExpVisionConfig,
+        "qwen3_8_flash_next": Qwen4ExpConfig,
+        "qwen3_8_flash_next_text": Qwen4ExpTextConfig,
     }
     # Cosmos3Config resolves vision sub-configs via ``qwen3_vl_vision``; that
     # alias is only present in newer transformers releases.

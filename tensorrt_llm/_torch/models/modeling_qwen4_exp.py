@@ -33,6 +33,7 @@ from ...inputs import (
 from ..attention.backends import AttentionMetadata
 from ..attention.backends.sparse.qsa.indexer import QSAIndexer
 from ..attention.backends.sparse.qsa.params import QSASparseParams
+from ..configs.qwen4_exp_quant import normalize_qwen4_exp_quant_config_dict
 from ..distributed import AllReduce, AllReduceParams, allgather
 from ..model_config import ModelConfig
 from ..modules.decoder_layer import DecoderLayer
@@ -1107,6 +1108,7 @@ class Qwen4ExpMTP(Qwen4ExpDecoderLayer):
             attn_metadata.all_rank_num_tokens = previous_all_rank_num_tokens
 
 
+@register_auto_model("Qwen3_8FlashNextForCausalLM")
 @register_auto_model("Qwen4ExpForCausalLM")
 class Qwen4ExpForCausalLM(SpecDecOneEngineForCausalLM[Qwen4ExpModel, PretrainedConfig]):
     """Qwen4-Exp hybrid text core (arch ``Qwen4ExpForCausalLM``).
@@ -1118,6 +1120,7 @@ class Qwen4ExpForCausalLM(SpecDecOneEngineForCausalLM[Qwen4ExpModel, PretrainedC
     """
 
     def __init__(self, model_config: ModelConfig[PretrainedConfig]):
+        normalize_qwen4_exp_quant_config_dict(model_config)
         _normalize_qwen35_exclude_modules(model_config)
         spec_config = getattr(model_config, "spec_config", None)
         if spec_config is not None and spec_config.spec_dec_mode.is_mtp_one_model():
@@ -1220,7 +1223,13 @@ _QWEN4_EXP_VL_PLACEHOLDER_METADATA = MultimodalPlaceholderMetadata(
 
 
 @register_vision_encoder(Qwen3VisionModelBase, vlm_base_model=Qwen3VisionModel)
+@register_auto_model("Qwen3_8FlashNextForConditionalGeneration")
 @register_auto_model("Qwen4ExpForConditionalGeneration")
+@register_input_processor(
+    Qwen3VLInputProcessorBase,
+    model_type="qwen3_8_flash_next",
+    placeholder_metadata=_QWEN4_EXP_VL_PLACEHOLDER_METADATA,
+)
 @register_input_processor(
     Qwen3VLInputProcessorBase,
     model_type="qwen4_exp",
