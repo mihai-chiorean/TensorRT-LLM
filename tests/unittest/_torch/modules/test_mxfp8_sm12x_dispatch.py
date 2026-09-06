@@ -85,12 +85,14 @@ def linear_module(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     spec.loader.exec_module(utils)
     monkeypatch.setitem(sys.modules, utils_name, utils)
     monkeypatch.delenv("TRTLLM_MXFP8_GEMM_BACKEND", raising=False)
+    monkeypatch.delenv("TRTLLM_MXFP8_FLASHINFER_BACKEND", raising=False)
     return module
 
 
 def _mock_device(monkeypatch: pytest.MonkeyPatch, capability: tuple[int, int]) -> SimpleNamespace:
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(torch.cuda, "get_device_capability", lambda: capability)
+    monkeypatch.setattr(torch.cuda, "current_device", lambda: 0)
     native = SimpleNamespace(
         mxfp8_mxfp8_gemm=Mock(side_effect=AssertionError("unsupported native GEMM called")),
         mxfp8_mxfp8_gemm_autotuned=Mock(
@@ -227,17 +229,20 @@ def test_sm12x_shape_selection_before_scale_allocation(
     "backend,n,k",
     [(None, 96, 2560), ("flashinfer", 96, 2560), ("auto", 129, 128), ("trtllm", 128, 128)],
 )
+@pytest.mark.parametrize("fi_backend", ["cutlass", "b12x"])
 def test_unsupported_sm121_shape_or_explicit_native_uses_exact_reference(
     linear_module: ModuleType,
     monkeypatch: pytest.MonkeyPatch,
     backend: str | None,
     n: int,
     k: int,
+    fi_backend: str,
 ) -> None:
     native = _mock_device(monkeypatch, (12, 1))
     flashinfer = _mock_flashinfer(monkeypatch)
     if backend is not None:
         monkeypatch.setenv("TRTLLM_MXFP8_GEMM_BACKEND", backend)
+    monkeypatch.setenv("TRTLLM_MXFP8_FLASHINFER_BACKEND", fi_backend)
     method = linear_module.MXFP8LinearMethod()
     module = nn.Module()
     module.dtype = torch.bfloat16
@@ -298,11 +303,14 @@ def test_invalid_backend_still_rejected(
         "test_mxfp8_native_autotuner_dispatch",
     ],
 )
+@pytest.mark.parametrize("fi_backend", ["cutlass", "b12x"])
 def test_existing_sm100_dispatch_regressions(
     linear_module: ModuleType,
     monkeypatch: pytest.MonkeyPatch,
     name: str,
+    fi_backend: str,
 ) -> None:
+    monkeypatch.setenv("TRTLLM_MXFP8_FLASHINFER_BACKEND", fi_backend)
     path = _ROOT / "tests/unittest/_torch/modules/test_mxfp8_linear.py"
     body = [
         node
