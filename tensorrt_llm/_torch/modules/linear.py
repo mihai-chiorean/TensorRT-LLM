@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 from __future__ import annotations
 
 import enum
@@ -3173,7 +3176,7 @@ class W4A8MXFP4MXFP8LinearMethod(W4A8MXFP4FP8LinearMethod):
 
 
 def _mxfp8_cutlass_op_available() -> bool:
-    """Cached check for whether the CUTLASS MXFP8xMXFP8 GEMM op is compiled in.
+    """Check native MXFP8 availability on the C++ dispatcher's SM100 family.
 
     Pre-M2-build the op is absent and we fall back to the dequant reference
     path; post-build the op is registered under torch.ops.trtllm and we route
@@ -3181,7 +3184,7 @@ def _mxfp8_cutlass_op_available() -> bool:
     """
     return hasattr(torch.ops.trtllm,
                    "mxfp8_mxfp8_gemm") and torch.cuda.is_available(
-                   ) and torch.cuda.get_device_capability()[0] >= 10
+                   ) and torch.cuda.get_device_capability()[0] == 10
 
 
 _FLASHINFER_MXFP8_AUTOTUNE_ACTIVE = ContextVar(
@@ -3225,7 +3228,10 @@ class MXFP8LinearMethod(LinearMethodBase):
       - FlashInfer: reuse the CUTLASS-layout activations, weights, and scales
         with ``mm_mxfp8``. MiniMax-M3 enables this path automatically only
         while tuning or capturing decode CUDA graphs; eager execution remains
-        on the native TensorRT-LLM op.
+        on the native TensorRT-LLM op on SM100-family devices. SM120/121 use
+        FlashInfer's quantizer and GEMM directly, with the reference path for
+        unsupported shapes. An explicit ``trtllm`` override on SM120/121 also
+        uses the reference path, never the unsupported native GEMM.
 
     ``TRTLLM_MXFP8_GEMM_BACKEND`` can explicitly select ``trtllm``,
     ``flashinfer``, or ``auto``. The reference layout is 2D [O,K/32]; both
@@ -3243,7 +3249,13 @@ class MXFP8LinearMethod(LinearMethodBase):
     def __init__(self) -> None:
         super().__init__()
         self.use_cutlass = _mxfp8_cutlass_op_available()
-        self.backend = os.environ.get("TRTLLM_MXFP8_GEMM_BACKEND", "trtllm")
+        self._is_sm12x = (not self.use_cutlass and torch.cuda.is_available()
+                          and torch.cuda.get_device_capability() in ((12, 0),
+                                                                     (12, 1)))
+        self._use_flashinfer_sm12x = False
+        requested_backend = os.environ.get("TRTLLM_MXFP8_GEMM_BACKEND")
+        self.backend = (requested_backend if requested_backend is not None else
+                        ("auto" if self._is_sm12x else "trtllm"))
         # Only PyTorchModelEngine owns the startup tuning lifecycle. Keep
         # standalone modules and engine paths that skip warmup (for example,
         # Helix CP) on the direct native op instead of leaving Python
@@ -3254,6 +3266,8 @@ class MXFP8LinearMethod(LinearMethodBase):
             raise ValueError("TRTLLM_MXFP8_GEMM_BACKEND must be 'trtllm', "
                              f"'flashinfer', or 'auto', got {self.backend!r}")
         self._flashinfer_mxfp8 = None
+        self._flashinfer_quantize = None
+        self._flashinfer_interleave = None
         self._flashinfer_autotuned = False
         if self.backend == "flashinfer":
             self._load_flashinfer(required=True)
@@ -3267,7 +3281,8 @@ class MXFP8LinearMethod(LinearMethodBase):
 
     @property
     def needs_flashinfer_autotune(self) -> bool:
-        return self.uses_flashinfer and self._flashinfer_mxfp8 is not None
+        return (self.uses_flashinfer and self._flashinfer_mxfp8 is not None
+                and (not self._is_sm12x or self._use_flashinfer_sm12x))
 
     @property
     def needs_native_autotune(self) -> bool:
@@ -3275,7 +3290,7 @@ class MXFP8LinearMethod(LinearMethodBase):
                 and self.use_cutlass)
 
     def _load_flashinfer(self, *, required: bool) -> bool:
-        if not self.use_cutlass:
+        if not self.use_cutlass and not self._is_sm12x:
             if required:
                 raise RuntimeError(
                     "FlashInfer MXFP8 GEMM requires the TensorRT-LLM MXFP8 "
@@ -3283,8 +3298,15 @@ class MXFP8LinearMethod(LinearMethodBase):
             return False
         try:
             from flashinfer import autotune, mm_mxfp8
-            if not callable(autotune):
-                raise ImportError("flashinfer.autotune is unavailable")
+            if not callable(autotune) or not callable(mm_mxfp8):
+                raise ImportError(
+                    "FlashInfer MXFP8 GEMM or autotune is unavailable")
+            if self._is_sm12x:
+                from flashinfer import block_scale_interleave, mxfp8_quantize
+                if not callable(block_scale_interleave) or not callable(
+                        mxfp8_quantize):
+                    raise ImportError(
+                        "FlashInfer MXFP8 quantization is unavailable")
         except ImportError as error:
             if required:
                 raise RuntimeError(
@@ -3292,14 +3314,20 @@ class MXFP8LinearMethod(LinearMethodBase):
                     "pinned flashinfer-python package") from error
             logger.warning_once(
                 "FlashInfer MXFP8 is unavailable; using the native "
-                "TensorRT-LLM GEMM backend.",
+                "TensorRT-LLM GEMM backend where supported, otherwise the "
+                "dequantization reference path.",
                 key="flashinfer_mxfp8_unavailable")
             return False
         self._flashinfer_mxfp8 = mm_mxfp8
+        if self._is_sm12x:
+            self._flashinfer_quantize = mxfp8_quantize
+            self._flashinfer_interleave = block_scale_interleave
         return True
 
     def enable_flashinfer_auto(self) -> bool:
         """Enable graph-only FlashInfer dispatch unless the user overrode it."""
+        if self._is_sm12x:
+            return False
         if "TRTLLM_MXFP8_GEMM_BACKEND" in os.environ:
             return self.backend == "auto"
         if not self._load_flashinfer(required=False):
@@ -3322,7 +3350,11 @@ class MXFP8LinearMethod(LinearMethodBase):
 
     def disable_flashinfer_auto(self) -> None:
         if self.backend == "auto":
-            self.backend = "trtllm"
+            # SM12x has no native GEMM for the prepared swizzled layout.
+            # Keep its supported FlashInfer default tactic when tuning cannot
+            # run, without turning automatic selection into an explicit request.
+            if not self._is_sm12x:
+                self.backend = "trtllm"
             self._flashinfer_autotuned = False
 
     @classmethod
@@ -3336,10 +3368,22 @@ class MXFP8LinearMethod(LinearMethodBase):
         assert in_features % self.BLOCK_SIZE == 0, (
             f"in_features {in_features} must be divisible by "
             f"BLOCK_SIZE {self.BLOCK_SIZE}")
+        self._use_flashinfer_sm12x = (self._is_sm12x and self.uses_flashinfer
+                                      and self._flashinfer_mxfp8 is not None
+                                      and in_features >= 128
+                                      and out_features >= 128
+                                      and out_features % 32 == 0 and dtype
+                                      in (torch.bfloat16, torch.float16))
+        if self._is_sm12x and not self._use_flashinfer_sm12x:
+            logger.warning_once(
+                "SM12x MXFP8 Linear uses the dequantization reference path: "
+                f"N={out_features}, K={in_features}, dtype={dtype}, "
+                f"backend={self.backend}. Native MXFP8 GEMM is unsupported.",
+                key="mxfp8_sm12x_reference")
         module.weight = Parameter(torch.empty((out_features, in_features),
                                               dtype=torch.float8_e4m3fn),
                                   requires_grad=False)
-        if self.use_cutlass:
+        if self.use_cutlass or self._use_flashinfer_sm12x:
             # Swizzled 1D UE8M0 block-scale buffer matching CUTLASS layout.
             module.weight_scale = Parameter(torch.empty(
                 [self._swizzled_scale_size(out_features, in_features)],
@@ -3364,12 +3408,16 @@ class MXFP8LinearMethod(LinearMethodBase):
         if input.dim() > 2:
             input = input.reshape(-1, input.shape[-1])
 
-        if self.use_cutlass:
+        if self.use_cutlass or self._use_flashinfer_sm12x:
             # Dynamic MXFP8 activation quantization (swizzled SF layout), then
             # the CUTLASS block-scaled e4m3xe4m3 GEMM.
-            act_e4m3, act_sf = torch.ops.trtllm.mxfp8_quantize(
-                input.contiguous(), True)
-            use_flashinfer = self.backend == "flashinfer" or (
+            if self._use_flashinfer_sm12x:
+                act_e4m3, act_sf = self._flashinfer_quantize(
+                    input.contiguous(), is_sf_swizzled_layout=True)
+            else:
+                act_e4m3, act_sf = torch.ops.trtllm.mxfp8_quantize(
+                    input.contiguous(), True)
+            use_flashinfer = self._use_flashinfer_sm12x or self.backend == "flashinfer" or (
                 self.backend == "auto" and
                 (_FLASHINFER_MXFP8_AUTOTUNE_ACTIVE.get() or
                  (self._flashinfer_autotuned
@@ -3453,7 +3501,10 @@ class MXFP8LinearMethod(LinearMethodBase):
         and flatten to the 1D layout the kernel expects. Reference path: copy
         verbatim into the 2D parameter.
         """
-        if self.use_cutlass:
+        if self._use_flashinfer_sm12x:
+            swizzled = self._flashinfer_interleave(scale_2d)
+            copy_weight(module.weight_scale, swizzled)
+        elif self.use_cutlass:
             swizzled = torch.ops.trtllm.block_scale_interleave(scale_2d)
             copy_weight(module.weight_scale, swizzled)
         else:

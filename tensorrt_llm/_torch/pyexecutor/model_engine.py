@@ -2081,7 +2081,8 @@ class PyTorchModelEngine(ModelEngine):
                         "available on every TP/PP rank")
                 logger.warning(
                     "FlashInfer MXFP8 availability differs across TP/PP ranks; "
-                    "using the native TensorRT-LLM GEMM backend on every rank.")
+                    "skipping FlashInfer tuning and retaining each layer's "
+                    "supported fallback.")
 
         enable_flashinfer_mxfp8_autotuner = bool(flashinfer_mxfp8_methods)
         enable_native_mxfp8_autotuner = bool(native_mxfp8_methods)
@@ -2166,8 +2167,8 @@ class PyTorchModelEngine(ModelEngine):
                         "FlashInfer MXFP8 was explicitly requested but its autotuner "
                         "warmup forward could not run")
                 logger.warning(
-                    "FlashInfer MXFP8 autotuning could not run; using the native "
-                    "TensorRT-LLM GEMM backend.")
+                    "FlashInfer MXFP8 autotuning could not run; retaining each "
+                    "layer's supported untuned fallback.")
 
         if enable_native_mxfp8_autotuner:
             if ran_native_forward:
