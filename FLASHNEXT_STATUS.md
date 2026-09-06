@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 # Flash Next on DGX Spark
 
 ## Objective
@@ -63,9 +66,35 @@ bounded. Reassess available host memory before every model load.
 7. MXFP8 dense linears contain a Python/native eligibility mismatch: Python
    accepts compute-capability major >=10, including SM121, but the native
    dispatcher only serves SM100/103. Fix the gate before full-model execution.
-   An agent is checking FlashInfer 0.6.18 support and the N=96 GDN projection's
-   small-output constraint. Correct fallback is per-forward BF16 dequantization;
-   no optimization or performance claim for that path yet.
+   FlashInfer 0.6.18 CUTLASS works on the validated SM121 shapes; N=96 keeps
+   per-forward BF16 dequantization. B12x is a promising separate component
+   experiment, not yet the full-model default.
+
+## Integration Checkpoint: September 6, Afternoon
+
+- `c61c74a3`: reproducible smoke, streaming API harness, checkpoint-view
+  preparation and matched benchmark plan. Fifteen helper tests pass.
+- `7f4d3f0e`: retain asynchronous PLE prefetch output until its stream finishes.
+  Two SM121 tests pass; removing the fix reproduces early allocator reuse and
+  corruption. Independent of the new packed-table GPU path.
+- `36038260`: graph-compatible packed PLE lookup through independently owned
+  read-only mappings, without dense expansion or pinned host copies. Thirteen
+  SM121 helper/wrapper checks pass. Tests include changed-ID graph replay,
+  invalid rows, noncontiguous IDs, separate namespace mapping, and own-file
+  reclaim. Full-model memory-pressure validation remains outstanding.
+- `ed8858ea`: SM12x MXFP8 native gate, FlashInfer routing and backend intent:
+  36 isolated dispatch/engine tests pass, including existing SM100 behavior.
+  Actual edited linear methods passed three SM121 numerical probes. Full
+  TensorRT runtime import is still waiting on the native build.
+- Combined CPU PLE/helper/MXFP8 dispatch run: 96 passed, six GPU-only skips,
+  13 subtests passed. Six additional isolated engine-warmup cases passed.
+- B12x MXFP8: six GDN shapes at M=1/4/16 passed an independent FP32 reference
+  and changed-input graph tests. Outputs match CUTLASS bit-for-bit. Component
+  timings favor B12x, but no end-to-end speedup is claimed.
+- Bug ledger: [scripts/flashnext/BUGS.md](scripts/flashnext/BUGS.md).
+- Native build and resumable weight transfer remain active. No full-model
+  TensorRT generation has run. Initial smoke disables autotuning explicitly;
+  enable it with `--autotune` for a separately recorded tuning experiment.
 
 ## Benchmark Gates
 

@@ -16,6 +16,7 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--max-tokens", type=int, default=384)
     parser.add_argument("--mtp", type=int, default=0)
+    parser.add_argument("--autotune", action="store_true")
     parser.add_argument("--moe-backend", choices=("CUTLASS", "CUTEDSL"), default="CUTLASS")
     args = parser.parse_args()
     if not 0 < args.max_tokens <= 1024 or not 0 <= args.mtp <= 3:
@@ -48,37 +49,41 @@ def main() -> None:
         ),
         cuda_graph_config=None,
         disable_overlap_scheduler=True,
+        enable_autotuner=args.autotune,
         speculative_config=spec_config,
     )
     load_s = time.perf_counter() - started
     records = []
-    for prompt in prompts:
-        started = time.perf_counter()
-        result = llm.generate(prompt, SamplingParams(max_tokens=args.max_tokens, temperature=0))
-        torch.cuda.synchronize()
-        elapsed = time.perf_counter() - started
-        output = result.outputs[0]
-        record = {
-            "prompt": prompt,
-            "text": output.text,
-            "token_ids": list(output.token_ids),
-            "elapsed_s": elapsed,
-            "output_tokens_per_s_including_prefill": len(output.token_ids) / elapsed,
-        }
-        records.append(record)
-        print(json.dumps(record), flush=True)
+    try:
+        for prompt in prompts:
+            started = time.perf_counter()
+            result = llm.generate(prompt, SamplingParams(max_tokens=args.max_tokens, temperature=0))
+            torch.cuda.synchronize()
+            elapsed = time.perf_counter() - started
+            output = result.outputs[0]
+            record = {
+                "prompt": prompt,
+                "text": output.text,
+                "token_ids": list(output.token_ids),
+                "elapsed_s": elapsed,
+                "output_tokens_per_s_including_prefill": len(output.token_ids) / elapsed,
+            }
+            records.append(record)
+            print(json.dumps(record), flush=True)
+    finally:
+        llm.shutdown()
     report = {
         "load_s": load_s,
         "text_only": True,
         "cuda_graphs": False,
         "mtp": args.mtp,
         "moe_backend_requested": args.moe_backend,
+        "autotuner": args.autotune,
         "max_seq_len": 2048,
         "requests": records,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n")
-    llm.shutdown()
 
 
 if __name__ == "__main__":
