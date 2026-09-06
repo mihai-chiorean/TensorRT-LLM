@@ -274,6 +274,7 @@ class Qwen4ExpHfWeightMapper(Qwen2MoeHfWeightMapper):
         gdn_in_proj_scales: dict = {}
         # layer_prefix -> {shard_i / buffer_name: tensor}
         ngram: dict = {}
+        ngram_source_prefixes: dict[str, str] = {}
         # HC module prefix -> {down/inject: tensor}. Mix-only final heads only
         # contain `down` and retain the checkpoint's direct parameter name.
         hc_down_inject: dict = {}
@@ -328,6 +329,11 @@ class Qwen4ExpHfWeightMapper(Qwen2MoeHfWeightMapper):
                 # module prefix (`....ple`).
                 ple_prefix = key.split(".ple_embedding.", 1)[0]
                 leaf = key.split(".ple_embedding.", 1)[1]
+                source_prefix = (
+                    name.split(".ple_embedding.", 1)[0] + ".ple_embedding.ngram_embedding"
+                )
+                if ngram_source_prefixes.setdefault(ple_prefix, source_prefix) != source_prefix:
+                    raise ValueError(f"Ambiguous checkpoint PLE namespace for {ple_prefix}")
                 ngram.setdefault(ple_prefix, {})[leaf] = tensor
                 continue
             if key.endswith(".input_mix_weight_down.weight"):
@@ -535,7 +541,11 @@ class Qwen4ExpHfWeightMapper(Qwen2MoeHfWeightMapper):
 
         # --- pass 3: stream the PLE n-gram table + copy its metadata buffers. ---
         if ngram:
-            self._load_ngram_tables(ngram)
+            self._load_ngram_tables(
+                ngram,
+                checkpoint_dir=getattr(weights, "checkpoint_dir", None),
+                source_prefixes=ngram_source_prefixes,
+            )
 
         return new_weights
 
@@ -553,7 +563,13 @@ class Qwen4ExpHfWeightMapper(Qwen2MoeHfWeightMapper):
                 return module
         return None
 
-    def _load_ngram_tables(self, ngram: dict) -> None:
+    def _load_ngram_tables(
+        self,
+        ngram: dict,
+        *,
+        checkpoint_dir: str | None = None,
+        source_prefixes: dict[str, str] | None = None,
+    ) -> None:
         """Stream each PLE prefix's shards into its table + copy its buffers.
 
         Streaming shard-by-shard avoids materialising the full table a second
@@ -580,6 +596,12 @@ class Qwen4ExpHfWeightMapper(Qwen2MoeHfWeightMapper):
                 if module.tp_size != 1:
                     raise NotImplementedError("PLE NVFP4 mmap storage currently requires TP=1")
                 module.ngram_embedding.bind_shards(leaves)
+                if checkpoint_dir is not None:
+                    if source_prefixes is None or ple_prefix not in source_prefixes:
+                        raise ValueError(f"Missing original checkpoint namespace for {ple_prefix}")
+                    module.ngram_embedding.enable_gpu_lookup(
+                        checkpoint_dir, source_prefixes[ple_prefix]
+                    )
             elif "ngram_embedding.weight_scale_2" in leaves:
                 raise ValueError("PLE NVFP4 checkpoint requires ple_embedding_dtype='nvfp4'")
 

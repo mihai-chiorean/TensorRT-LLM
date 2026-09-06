@@ -108,6 +108,41 @@ def test_mapper_binds_paired_lazy_shards_and_metadata(
     assert mapper.should_skip_module("model.layers.1.ple.ple_embedding.ngram_embedding")
 
 
+@pytest.mark.parametrize("source_root", ["model.language_model", "model"])
+def test_mapper_retains_original_ple_namespace(
+    source_root: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class CheckpointWeights(dict):
+        checkpoint_dir = str(tmp_path)
+
+    source_prefix = f"{source_root}.layers.1.ple.ple_embedding.ngram_embedding"
+    weights = CheckpointWeights(
+        {f"{source_prefix}.shard_0.weight": torch.zeros(1, 80, dtype=torch.uint8)}
+    )
+    mapper = Qwen4ExpHfWeightMapper()
+    mapper._config = SimpleNamespace(
+        pretrained_config=SimpleNamespace(
+            num_hidden_layers=48,
+            linear_key_head_dim=128,
+            linear_num_key_heads=16,
+            linear_value_head_dim=128,
+            linear_num_value_heads=48,
+        ),
+        mapping=Mapping(),
+        spec_config=None,
+    )
+    captured = {}
+
+    def capture(ngram: dict, **kwargs: object) -> None:
+        captured.update(ngram=ngram, **kwargs)
+
+    monkeypatch.setattr(mapper, "_load_ngram_tables", capture)
+    assert mapper.preprocess_weights(weights) == {}
+    assert captured["checkpoint_dir"] == str(tmp_path)
+    assert captured["source_prefixes"] == {"model.layers.1.ple": source_prefix}
+    assert set(captured["ngram"]) == {"model.layers.1.ple"}
+
+
 @pytest.mark.parametrize("entry_point", ["forward", "start_prefetch"])
 def test_ple_rejects_graph_metadata_before_work(entry_point: str) -> None:
     # Reject before reading metadata fields or touching a CUDA stream/state.

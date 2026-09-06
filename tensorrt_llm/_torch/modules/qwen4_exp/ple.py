@@ -1100,7 +1100,7 @@ class Qwen4ExpPLE(nn.Module):
     ) -> None:
         """Start the sparse host lookup before execution reaches the PLE layer."""
         if self.ple_embedding.nvfp4_storage:
-            self.ple_embedding.ngram_embedding.check_eager(
+            self.ple_embedding.ngram_embedding.check_execution(
                 ngram_context.device, is_cuda_graph=metadata.is_cuda_graph
             )
         prefetch_stream = self._prefetch_stream
@@ -1364,7 +1364,7 @@ class Qwen4ExpPLE(nn.Module):
         """
         m = metadata
         if self.ple_embedding.nvfp4_storage:
-            self.ple_embedding.ngram_embedding.check_eager(
+            self.ple_embedding.ngram_embedding.check_execution(
                 hidden_states.device, is_cuda_graph=m.is_cuda_graph
             )
         hc_dim = self.hc_count * self.hidden_size

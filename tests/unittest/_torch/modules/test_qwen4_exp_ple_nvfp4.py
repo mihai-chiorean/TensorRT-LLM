@@ -245,10 +245,45 @@ def test_unbound_and_external_scaling_fail() -> None:
 
 def test_graph_guard_precedes_cpu_roundtrip(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(torch.cuda, "is_current_stream_capturing", lambda: True)
+    table = Qwen4ExpNVFP4MmapEmbedding(5, 32)
     with pytest.raises(RuntimeError, match="eager-only"):
-        Qwen4ExpNVFP4MmapEmbedding.check_eager(torch.device("cuda"))
+        table.check_execution(torch.device("cuda"))
     with pytest.raises(RuntimeError, match="eager-only"):
-        Qwen4ExpNVFP4MmapEmbedding.check_eager(torch.device("cpu"), is_cuda_graph=True)
+        table.check_execution(torch.device("cpu"), is_cuda_graph=True)
+
+
+def test_cpu_only_lookup_does_not_open_gpu_mappings(monkeypatch: pytest.MonkeyPatch) -> None:
+    table = Qwen4ExpNVFP4MmapEmbedding(5, 32)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    with pytest.raises(RuntimeError, match="Bind PLE"):
+        table.enable_gpu_lookup("/unused", "embedding")
+    table.bind_shards(_leaves())
+    assert not table.enable_gpu_lookup("/unused", "embedding")
+    assert not table.supports_cuda_graph
+    assert table.gather(torch.tensor([0])).shape == (1, 32)
+
+
+@pytest.mark.parametrize("stride", [1, 2])
+def test_output_cannot_overwrite_ids_for_later_chunks(stride: int) -> None:
+    table = Qwen4ExpNVFP4MmapEmbedding(5, 32, max_gather_rows=1)
+    table.bind_shards(_leaves())
+    storage = torch.zeros(64, dtype=torch.bfloat16)
+    ids = storage.view(torch.int64)[::stride][:2]
+    ids.copy_(torch.tensor([0, 1]))
+    with pytest.raises(ValueError, match="overlap input ID"):
+        table.gather(ids, out=storage.view(2, 32))
+
+
+def test_disjoint_views_of_shared_storage_are_allowed() -> None:
+    table = Qwen4ExpNVFP4MmapEmbedding(5, 32, max_gather_rows=1)
+    table.bind_shards(_leaves())
+    storage = torch.zeros(72, dtype=torch.bfloat16)
+    ids = storage[64:].view(torch.int64)
+    ids.copy_(torch.tensor([0, 3]))
+    expected = table.gather(ids.clone())
+    output = storage[:64].view(2, 32)
+    assert table.gather(ids, out=output) is output
+    torch.testing.assert_close(output, expected, rtol=0, atol=0)
 
 
 def test_selected_row_scratch_is_chunk_bounded(monkeypatch: pytest.MonkeyPatch) -> None:

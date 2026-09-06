@@ -16,10 +16,13 @@
 
 import math
 import re
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import torch
 from torch import nn
+
+if TYPE_CHECKING:
+    from .ple_nvfp4_gpu import Qwen4ExpNVFP4MmapGPUBackend
 
 __all__ = ["Qwen4ExpNVFP4MmapEmbedding"]
 
@@ -51,7 +54,6 @@ class Qwen4ExpNVFP4MmapEmbedding(nn.Module):
     """
 
     _requires_standard_hf_loading = True
-    supports_cuda_graph = False
 
     def __init__(
         self,
@@ -72,6 +74,39 @@ class Qwen4ExpNVFP4MmapEmbedding(nn.Module):
         self.max_gather_rows = max_gather_rows
         self._shards: tuple[tuple[torch.Tensor, torch.Tensor], ...] = ()
         self._global_scale: float | None = None
+        self._gpu_backend: Qwen4ExpNVFP4MmapGPUBackend | None = None
+        self._gpu_device: torch.device | None = None
+
+    @property
+    def supports_cuda_graph(self) -> bool:
+        return self._gpu_backend is not None
+
+    def enable_gpu_lookup(self, checkpoint_dir: str, prefix: str) -> bool:
+        """Prepare independent read-only mappings on supported unified-memory GPUs.
+
+        Unsupported devices retain the eager CPU lookup. This setup must finish
+        before capture; the module owns mappings and device pointer tables for
+        the lifetime of every graph that calls it.
+        """
+        if self._gpu_backend is not None:
+            raise RuntimeError("PLE NVFP4 GPU mappings cannot be rebound")
+        if not self._shards:
+            raise RuntimeError("Bind PLE NVFP4 CPU shards before enabling GPU lookup")
+        if not torch.cuda.is_available():
+            return False
+        from .ple_nvfp4_gpu import Qwen4ExpNVFP4MmapGPUBackend
+
+        device = torch.device("cuda", torch.cuda.current_device())
+        if not all(Qwen4ExpNVFP4MmapGPUBackend.device_capabilities(device).values()):
+            return False
+        backend = Qwen4ExpNVFP4MmapGPUBackend(
+            self.num_embeddings, self.embedding_dim, expected_shards=self.expected_shards
+        )
+        backend.bind_checkpoint(checkpoint_dir, prefix)
+        backend.prepare(device)
+        self._gpu_backend = backend
+        self._gpu_device = device
+        return True
 
     def bind_shards(self, leaves: dict[str, torch.Tensor | _SliceSource]) -> None:
         """Validate shard metadata and retain CPU views without copying tables.
@@ -79,6 +114,10 @@ class Qwen4ExpNVFP4MmapEmbedding(nn.Module):
         Block-scale values are validated only when selected, avoiding an eager
         scan or float conversion of billions of mmap-backed scales.
         """
+        if self._gpu_backend is not None:
+            raise RuntimeError(
+                "PLE NVFP4 shards cannot be rebound while GPU graphs may retain them"
+            )
         parts: dict[int, dict[str, torch.Tensor | _SliceSource]] = {}
         for name, source in leaves.items():
             if not name.startswith("ngram_embedding.shard_"):
@@ -135,15 +174,24 @@ class Qwen4ExpNVFP4MmapEmbedding(nn.Module):
         self._shards = tuple(shards)
         self._global_scale = global_scale
 
-    @staticmethod
-    def check_eager(device: torch.device, *, is_cuda_graph: bool = False) -> None:
-        """Reject graph execution before starting the CPU round trip."""
+    def _uses_gpu(self, device: torch.device) -> bool:
+        if self._gpu_backend is None or device.type != "cuda":
+            return False
+        device = torch.device(
+            "cuda", torch.cuda.current_device() if device.index is None else device.index
+        )
+        return device == self._gpu_device
+
+    def check_execution(self, device: torch.device, *, is_cuda_graph: bool = False) -> None:
+        """Permit graphs only on the prepared GPU delegate, never the CPU path."""
+        if self._uses_gpu(device):
+            return
         if is_cuda_graph or (device.type == "cuda" and torch.cuda.is_current_stream_capturing()):
             raise RuntimeError("PLE NVFP4 mmap lookup is eager-only; disable CUDA graphs")
 
     def allocate_output(self, shape: tuple[int, ...], device: torch.device) -> torch.Tensor:
         """Allocate BF16 selected-row output compatible with PLE prefetch."""
-        self.check_eager(device)
+        self.check_execution(device)
         return torch.empty(shape, dtype=torch.bfloat16, device=device)
 
     def gather(
@@ -158,7 +206,10 @@ class Qwen4ExpNVFP4MmapEmbedding(nn.Module):
         CPU scratch is bounded by ``max_gather_rows * embedding_dim``; only
         IDs and the selected BF16 rows cross the CPU/GPU boundary.
         """
-        self.check_eager(input_ids.device)
+        self.check_execution(input_ids.device)
+        if self._uses_gpu(input_ids.device):
+            assert self._gpu_backend is not None
+            return self._gpu_backend.gather(input_ids.contiguous(), out, weight_scale=weight_scale)
         if not self._shards or self._global_scale is None:
             raise RuntimeError("PLE NVFP4 checkpoint shards have not been bound")
         if weight_scale is not None:
@@ -177,6 +228,16 @@ class Qwen4ExpNVFP4MmapEmbedding(nn.Module):
                 or not out.is_contiguous()
             ):
                 raise ValueError("PLE NVFP4 output must be contiguous BF16 on the input-ID device")
+            if input_ids.numel():
+                ids_begin = input_ids.data_ptr()
+                ids_span = 1 + sum(
+                    (size - 1) * stride for size, stride in zip(input_ids.shape, input_ids.stride())
+                )
+                ids_end = ids_begin + ids_span * input_ids.element_size()
+                out_begin = out.data_ptr()
+                out_end = out_begin + out.numel() * out.element_size()
+                if max(ids_begin, out_begin) < min(ids_end, out_end):
+                    raise ValueError("PLE NVFP4 output must not overlap input ID storage")
         ids = input_ids.detach().to(device="cpu", dtype=torch.int64).reshape(-1)
         if ids.numel() and (ids.min().item() < 0 or ids.max().item() >= self.num_embeddings):
             raise IndexError(f"PLE NVFP4 row IDs must be in [0, {self.num_embeddings})")
