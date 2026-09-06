@@ -75,6 +75,7 @@ from typing import Optional
 import torch
 from torch import nn
 
+from tensorrt_llm._torch.models.checkpoints.base_weight_loader import ConsumableWeightsDict
 from tensorrt_llm._torch.models.checkpoints.hf.qwen2_moe_weight_mapper import Qwen2MoeHfWeightMapper
 from tensorrt_llm._torch.models.modeling_utils import register_mapper
 from tensorrt_llm._torch.modules.qwen4_exp.ple import Qwen4ExpPinnedHostEmbedding
@@ -235,7 +236,9 @@ class Qwen4ExpHfWeightMapper(Qwen2MoeHfWeightMapper):
             module, module_name, module_weights, allow_partial_loading=allow_partial_loading
         )
 
-    def preprocess_weights(self, weights: dict, allow_partial_loading: bool = False) -> dict:
+    def preprocess_weights(
+        self, weights: dict | ConsumableWeightsDict, allow_partial_loading: bool = False
+    ) -> dict | ConsumableWeightsDict:
         config = self.config.pretrained_config
         tp_size = 1 if self.config.mapping.enable_attention_dp else self.config.mapping.tp_size
         tp_rank = self.config.mapping.tp_rank
@@ -540,14 +543,20 @@ class Qwen4ExpHfWeightMapper(Qwen2MoeHfWeightMapper):
             new_weights[f"{prefix}.input_mix_weight_down_block_inject.weight"] = packed
 
         # --- pass 3: stream the PLE n-gram table + copy its metadata buffers. ---
+        checkpoint_dir = getattr(weights, "checkpoint_dir", None)
         if ngram:
             self._load_ngram_tables(
                 ngram,
-                checkpoint_dir=getattr(weights, "checkpoint_dir", None),
+                checkpoint_dir=checkpoint_dir,
                 source_prefixes=ngram_source_prefixes,
             )
 
-        return new_weights
+        # Transfer only after every rewrite and PLE binding succeeds. Prefix
+        # consumers can then release fused allocations and surviving aliases.
+        result = ConsumableWeightsDict.take_ownership(weights, new_weights)
+        if isinstance(result, ConsumableWeightsDict) and checkpoint_dir is not None:
+            result.checkpoint_dir = checkpoint_dir
+        return result
 
     # ----- PLE n-gram embedding -------------------------------------------
 
