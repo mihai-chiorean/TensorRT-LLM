@@ -1,0 +1,4 @@
+[
+  "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\nExplain how a hash table handles collisions. Give a short Python example using a dictionary.<|im_end|>\n<|im_start|>assistant\n",
+  "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\nA train travels 120 kilometers in 90 minutes. What is its average speed in kilometers per hour? Explain your calculation briefly.<|im_end|>\n<|im_start|>assistant\n"
+]
