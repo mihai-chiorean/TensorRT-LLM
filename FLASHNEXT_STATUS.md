@@ -11,7 +11,8 @@ is claimed until measured. Keep spark-094a's working deployment unchanged.
 
 ## Current Checkpoint
 
-- Source head: `a2fbebd2`; fresh native libraries are ready.
+- Source head: `cea23010`; fresh native libraries are ready. The optional B12x
+  selector is integrated locally, disabled by default and not yet deployed.
 - Verified full checkpoint and text-only view are on Spark-3883.
 - All 1,690 modules loaded in the second smoke (2m32s). Initialization then
   correctly rejected an undersized cache quota: 212,893,030 bytes versus
@@ -29,11 +30,45 @@ is claimed until measured. Keep spark-094a's working deployment unchanged.
   tests, not generated text. The configured byte quota
   is not an absolute native allocation ceiling: the C++ allocator can increase
   it to satisfy minimum slot constraints. Retain the independent host guard.
-- Full-model retry started at 01:32 UTC September 7 with those qualified
-  settings. Container log/metrics prefix:
+- Full-model retry succeeded at 01:37 UTC September 7 with those qualified
+  settings: coherent hash-table explanation (384-token cap) and correct train
+  speed answer (80 km/h, 204 output tokens). Initialization took 243.10 s;
+  request rates including prefill were 11.27 and 11.49 tok/s. No graph/MTP,
+  no autotuning, CUTLASS MoE/MXFP8. These are smoke rates, not TPOT.
+  Container log/metrics prefix:
   `/tmp/flashnext-smoke-no-mtp-20260906-1832`.
-- No full-model generation or TRT throughput result yet. The B12x MXFP8
-  candidate remains separate at `24e2d81c`, ready for a controlled later A/B.
+- Baseline API pilot completed; parent stopped its guard after testing and
+  confirmed no remaining workers at 01:55 UTC. Log/metrics prefix:
+  `/tmp/flashnext-serve-eager-20260906-1838`. The B12x candidate `24e2d81c` was cherry-picked as
+  `1cd19650`; 104 isolated CPU tests pass, eight GPU cases skip locally,
+  and all touched-file pre-commit checks pass. No B12x full-model claim yet.
+- `cea23010` adds opt-in smoke diagnostics using actual cumulative accepted/
+  drafted counters, preserving unavailable values as null. Seven CPU checks
+  and hooks pass. Instrumented runs are not primary performance measurements.
+
+### First Serving Results
+
+Eight distinct short prompts, exactly 128 output tokens each, two repetitions
+per concurrency. These include reasoning tokens, prefill and batch drain.
+
+| Deployment | C1 aggregate tok/s | C2 aggregate tok/s |
+| --- | ---: | ---: |
+| TensorRT eager, no MTP, CUTLASS | 10.84 / 11.50 | 21.87 / 20.91 |
+| Unchanged vLLM reference, graphs + MTP3 | 34.99 / 37.20 | 55.04 / 58.13 |
+
+All 32 requests per engine completed with exact lengths and no API errors.
+This is not equal-settings engine isolation: TensorRT has BF16 KV, batch cap
+2 and sequence limit 2048; vLLM has FP8 KV, cap 4 and limit 262144. Reference
+prefix caching remains enabled and natural page/cache states are uncontrolled.
+Both use local SSH tunnels; Isaac Sim remains active on the TensorRT host.
+Reference counters show 2738 accepted of 4077 draft tokens (67.16%). No win yet.
+
+Strict eight-case quality: TensorRT 6 passed, 1 arithmetic failure, 1 manually
+reviewed correct Python function left automatically unscored. Reference was
+5 passed, 2 failed, 1 unscored. Both got inventory arithmetic wrong; keep that
+failure visible rather than claiming general accuracy from this small suite.
+Artifacts are in sibling `flashnext-results`, prefixes `20260906-trt-eager-1838`
+and `20260906-vllm-pilot`. Next: qualify B12x M2/M8, full B12x A/B, graphs, MTP.
 
 ## Provenance (2026-09-06)
 
