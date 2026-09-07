@@ -236,3 +236,48 @@ These are experimental implementation mistakes, not claims about upstream.
 - Evidence: sibling results `qsa-hybrid-mtp-prefix-reuse-eligibility.md` and
   `mtp-draft-prefix-initialization-followup.md`. Reuse-OFF batch-4/8 native
   allocation passes do not cover this finding; no new GPU/API test was run.
+
+## Anonymous CPU Weight Discard Hazard
+
+- Status: reproduced by the real MTP expert-loading fixture on SM121; no
+  runtime fix applied. The production checkpoint path uses file-backed sources.
+- Symptom: anonymous CPU clones of SafeTensors weights became zero during
+  loading. Gate/up aliases were consumed after discard; independent comparisons
+  then failed. This was not a B12x checkpoint-layout failure.
+- Site: `_torch/moe/fused_moe/quantization.py`, integrated-device `dontneed`
+  policy and contiguous-source discard; `_torch/mmap_utils.py`,
+  `MADV_DONTNEED` helper. Review against the pinned runtime, not moving lines.
+- Cause: discarding anonymous complete pages destroys their contents; unlike
+  file-backed pages, they cannot be faulted back from checkpoint storage.
+  Source aliases retained by later loading steps make this observable.
+- Repro: selected actual shard-34 MTP tensors cloned to CPU storage, then real
+  `load_weights`/`post_load_weights`. Attempts 1-3 are retained in sibling
+  `mtp-trt-experts-numerics-attempt*-20260907.log`.
+- Current fixture correction: retain verified file-backed SafeTensors sources
+  and compute independent reference outputs before loading consumes sources.
+  Attempt 4 passes both backends without relaxing numerical thresholds.
+- Follow-up: establish the loader's accepted-source/lifetime contract before
+  choosing a backing-aware discard guard. Do not classify all CPU tensors as
+  reclaimable file mappings or silently disable all weight reclamation.
+
+## Small-Batch B12x MTP Repeatability
+
+- Status: component nondeterminism measured; full-model causality unresolved.
+  MTP-only B12x remains default-off and experimental.
+- Real-checkpoint paired expert tests pass the predeclared numerical tolerance
+  against independently dequantized references. CUTLASS adjacent repeats are
+  exact in 56/56 comparisons. B12x M1/2/4 differs in 42/42 adjacent comparisons;
+  M8 is exact in 14/14. Maximum repeat row-relative L2 is 0.004982044 and
+  absolute difference 0.00048828125. These are numerical errors, not percentages
+  of model-quality loss.
+- Installed FlashInfer 0.6.18 `moe_w4a16_kernel.py` selects a packed BF16 path
+  for M <= 4. Separate routes atomically accumulate into the same output;
+  larger M uses per-route outputs followed by a top-k reduction. This matches
+  the measured pattern but has not been isolated by a kernel-path ablation.
+- Full-model B4 C1 repeated texts matched 2/32 with the B12x draft versus 32/32
+  with CUTLASS. Tiny final-answer checks stayed coherent with unchanged scores.
+  Neither coherence nor a component-tolerance pass clears this observation.
+- Next: token-ID/acceptance diagnostics and an existing deterministic-path
+  selector, if available, before considering a kernel change or promotion.
+- Evidence: sibling `mtp-trt-experts-numerics-report-20260907.md`, structured
+  summary and four unfiltered logs; no runtime change made by the probe.
