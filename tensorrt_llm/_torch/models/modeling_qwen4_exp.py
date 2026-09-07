@@ -14,6 +14,8 @@
 # limitations under the License.
 """TensorRT-LLM text implementation for Qwen3.8-Flash-Next checkpoints."""
 
+import copy
+import os
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Tuple
 
@@ -30,6 +32,7 @@ from ...inputs import (
     MultimodalPlaceholderPlacement,
     register_input_processor,
 )
+from ...quantization import QuantAlgo
 from ..attention.backends import AttentionMetadata
 from ..attention.backends.sparse.qsa.indexer import QSAIndexer
 from ..attention.backends.sparse.qsa.params import QSASparseParams
@@ -52,7 +55,7 @@ from ..utils import AuxStreamType, EventType, create_lm_head_tp_mapping
 from .checkpoints.base_weight_mapper import BaseWeightMapper
 from .modeling_qwen3 import Qwen3Attention
 from .modeling_qwen3_5 import _normalize_qwen35_exclude_modules
-from .modeling_qwen3_next import Qwen3NextSparseMoeBlock
+from .modeling_qwen3_next import Qwen3NextSparseMoeBlock, _experts_excluded_from_quant
 from .modeling_qwen3vl import (
     Qwen3VisionModel,
     Qwen3VisionModelBase,
@@ -989,6 +992,55 @@ class Qwen4ExpMTPHead(Qwen4ExpLogitsProcessor):
                 lm_head.gather_output = previous_gather_output
 
 
+def _qwen4_exp_mtp_b12x_config(
+    model_config: ModelConfig[PretrainedConfig], layer_idx: int
+) -> ModelConfig[PretrainedConfig]:
+    """Select experimental W4A16 B12x for the single MTP layer only."""
+    selector = os.environ.get("TRTLLM_QWEN4_MTP_B12X", "0")
+    if selector == "0":
+        return model_config
+    if selector != "1":
+        raise ValueError("TRTLLM_QWEN4_MTP_B12X must be 0 or 1")
+
+    config = model_config.pretrained_config
+    mapping = model_config.mapping
+    if model_config.moe_backend != "CUTLASS":
+        raise ValueError("MTP-only B12x requires the target MoE backend to remain CUTLASS")
+    if not torch.cuda.is_available() or torch.cuda.get_device_capability() != (12, 1):
+        raise ValueError("MTP-only B12x requires SM121")
+    if config.torch_dtype != torch.bfloat16:
+        raise ValueError("MTP-only B12x requires BF16 activations")
+    if (mapping.tp_size, mapping.pp_size, mapping.cp_size, mapping.moe_ep_size) != (1, 1, 1, 1):
+        raise ValueError("MTP-only B12x requires TP1/PP1/CP1/EP1")
+    if (
+        layer_idx != config.num_hidden_layers
+        or config.mtp_num_hidden_layers != 1
+        or (
+            config.num_experts,
+            config.hidden_size,
+            config.moe_intermediate_size,
+            config.num_experts_per_tok,
+        )
+        != (512, 2560, 640, 10)
+    ):
+        raise ValueError("MTP-only B12x requires one E512/H2560/I640/top10 MTP layer")
+    policy = (model_config.quant_config_dict or {}).get(f"model.layers.{layer_idx}.mlp.experts")
+    if (
+        policy is None
+        or policy.quant_algo != QuantAlgo.W4A16_NVFP4
+        or policy.group_size != 16
+        or _experts_excluded_from_quant(model_config, layer_idx)
+    ):
+        raise ValueError("MTP-only B12x requires non-excluded W4A16_NVFP4 group-16 experts")
+
+    # Do not mutate the target config or reduce the draft scheduler's capacity.
+    mtp_config = copy.copy(model_config)
+    mtp_config._frozen = False
+    mtp_config.moe_backend = "CUTEDSL"
+    mtp_config._frozen = model_config._frozen
+    return mtp_config
+
+
 class Qwen4ExpMTP(Qwen4ExpDecoderLayer):
     """One checkpoint MTP layer, replayed recurrently for each draft token."""
 
@@ -998,6 +1050,8 @@ class Qwen4ExpMTP(Qwen4ExpDecoderLayer):
         layer_idx: int,
         aux_stream_dict: Dict[AuxStreamType, torch.cuda.Stream],
     ) -> None:
+        target_config = model_config
+        model_config = _qwen4_exp_mtp_b12x_config(model_config, layer_idx)
         super().__init__(
             model_config,
             layer_idx,
@@ -1005,6 +1059,11 @@ class Qwen4ExpMTP(Qwen4ExpDecoderLayer):
             "full_attention",
             False,
         )
+        if model_config is not target_config:
+            from ..moe.fused_moe.fused_moe_cute_dsl_b12x import CuteDslB12xFusedMoE
+
+            if not isinstance(getattr(self.mlp.experts, "backend", None), CuteDslB12xFusedMoE):
+                raise RuntimeError("MTP-only B12x was requested but MoE resolution fell back")
         config = model_config.pretrained_config
         self.pre_fc_norm_embedding = RMSNorm(
             hidden_size=config.hidden_size,
