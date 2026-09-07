@@ -11,6 +11,20 @@ is claimed until measured. Keep spark-094a's working deployment unchanged.
 
 ## Current Checkpoint
 
+- **Working text-only port; benchmark checkpoint complete, not a vLLM win.**
+  Best tested configuration is opt-in B12x dense + MTP3 + decode graphs:
+  four fixed-output pairs pooled to 26.0622 tok/s at C1 and 38.9456 aggregate
+  tok/s at C2, versus reference 36.0620 / 56.5436 across two pairs.
+  Runs vary substantially; these are shared-host deployment comparisons with
+  differing KV precision, prefix caching and serving limits, not engine isolation.
+  See [bounded run guide](scripts/flashnext/RUNNING.md).
+- Final test server stopped after completion at 03:01:18 UTC September 7.
+  Watchdog reports no remaining owned workers; local test tunnels are closed.
+  The built container/checkpoint remain available. Spark-094a was not modified.
+- Final extended run minimum host memory available: 8.3429 GiB, only about
+  351 MiB above the 8 GiB stop threshold. No sampled OOM events, but admission
+  headroom is not comfortable with existing cotenants. Cleanup recovered
+  100.81 GiB available. Keep the guard and conservative limits.
 - Source head: `1175859d`; fresh native libraries are ready. B12x is opt-in,
   deployed and measured with the expanded M1/2/4/8/16 dispatch envelope.
 - Verified full checkpoint and text-only view are on Spark-3883.
@@ -58,6 +72,8 @@ per concurrency. These include reasoning tokens, prefill and batch drain.
 | TensorRT eager, no MTP, CUTLASS | 10.84 / 11.50 | 21.87 / 20.91 |
 | TensorRT eager, no MTP, B12x dense | 13.68 / 14.79 | 26.98 / 28.19 |
 | TensorRT decode graphs, no MTP, B12x dense | 17.66 / 20.19 | 33.71 / 36.01 |
+| TensorRT eager, MTP3, B12x dense | 22.56 / 25.80 | 30.77 / 35.45 |
+| TensorRT decode graphs, MTP3, B12x dense | 21.91 / 30.40 | 30.70 / 44.14 |
 | Unchanged vLLM reference, graphs + MTP3 | 34.99 / 37.20 | 55.04 / 58.13 |
 
 All 32 requests per engine completed with exact lengths and no API errors.
@@ -66,6 +82,10 @@ This is not equal-settings engine isolation: TensorRT has BF16 KV, batch cap
 prefix caching remains enabled and natural page/cache states are uncontrolled.
 Both use local SSH tunnels; Isaac Sim remains active on the TensorRT host.
 Reference counters show 2738 accepted of 4077 draft tokens (67.16%). No win yet.
+The final MTP graph configuration also received two additional repeat pairs:
+C1 24.53 / 29.26, C2 40.74 / 43.61 tok/s. All 64 fixed-output requests across
+its four pairs succeeded. Report all four, not only the fastest pass; the third
+C1 pass fell below the second, so simple warming is not an established cause.
 
 Strict eight-case quality: TensorRT 6 passed, 1 arithmetic failure, 1 manually
 reviewed correct Python function left automatically unscored. Reference was
@@ -85,7 +105,7 @@ under investigation; these results do not establish graph/eager equivalence.
 The graph guard was stopped after loadgen finished; cleanup completed at
 02:28 UTC September 7. The reference remains faster.
 
-### Active Experiment
+### MTP Results
 
 MTP3 eager diagnostic succeeded at 02:33 UTC September 7: all 1804 modules
 loaded, initialization 254.75 s, two 32-token requests completed with coherent
@@ -96,13 +116,47 @@ is MTP_EAGLE_ONE_MODEL; strict acceptance, no relaxed-thinking acceptance.
 Log/metrics prefix `/tmp/flashnext-smoke-mtp3-20260906-1930`; clean exit 0,
 no remaining owned processes after cleanup at 02:33:44 UTC.
 
-MTP3 eager API validation launched at 02:35 UTC with the same B12x environment,
-CUTLASS MoE, no graphs/overlap/autotuning, FP32 recurrent/BF16 KV and 2048
-sequence limit. Only the speculative configuration changes from the B12x eager
-API baseline; diagnostic stats are disabled. Container log/metrics prefix:
-`/tmp/flashnext-serve-mtp3-eager-20260906-1935`. The 25-minute host-memory
-watchdog remains active. Graph output repeatability is being audited
-independently without concurrent GPU work.
+MTP3 eager API validation completed all 42 requests (32 fixed-output) with no
+protocol errors; cleanup confirmed at 02:44:56 UTC. Only the speculative
+configuration changed from the B12x eager API baseline. The strict quality
+score was 5 passed, 2 failed, 1 unscored: inventory arithmetic plus a Markdown
+fence around an otherwise correct JSON-filter answer. C1 repeat texts matched
+8/8, but C2 matched only 1/8; actual batch scheduling and numerical/state causes
+remain unlocalized. Do not claim equivalence. Pooled C1 throughput was 24.0672,
+C2 32.9467 tok/s. Container prefix:
+`/tmp/flashnext-serve-mtp3-eager-20260906-1935`.
+
+MTP3 plus decode graphs completed startup/capture and all 74 API requests,
+changing only graph config to batch sizes [1, 2], padding disabled. All eight
+quality texts exactly match eager MTP; strict score remains 5/2/1, not quality
+parity with no-MTP. First two C1 repeats match 8/8 texts; C2 matches only 1/8.
+The reference also varies (0/8 repeat texts at both concurrencies), with prefix
+caching enabled; that neither explains nor clears the TRT repeatability issue.
+Container log/metrics prefix `/tmp/flashnext-serve-mtp3-graphs-20260906-1945`.
+Cleanup completed at 03:01:18 UTC, intentional stop exit 143, no remaining owned
+workers. Source audit predicts four short-family graph keys (greedy and advanced
+sampling for two batches), but capture-loop logs do not measure actual key count.
+Near-limit long-family warmup may collapse to a short key and fall back to eager;
+the short-prompt pilot does not qualify sparse/threshold-crossing graphs.
+
+### Next Work, Not Running
+
+1. Trace the working MTP path, recording actual graph replay, target verification,
+   W4A16 draft MoE, dense linears, PLE faults and host scheduling. Correlate
+   acceptance with net token rate; the 46/57 short smoke is not pilot acceptance.
+2. Run the prepared request-order diagnostic and controlled state/logit replay
+   to localize repeatability before promoting graphs as a default. API text
+   differences alone do not prove state corruption or harmless rounding.
+3. Benchmark isolated serving settings after coordinating shared-host access.
+   Then evaluate MTP-only B12x MoE, overlap, FP8 KV or N96 caching one at a time
+   if the trace supports them. No blind global CUTEDSL switch.
+
+All findings, failed attempts, exact configs and raw results remain in sibling
+`flashnext-results`; no upstream issues/PRs were opened for this fresh fork.
+The final local validation repeat passed 114 benchmark/quality/checkpoint helper
+tests, 116 isolated MXFP8 CPU cases (8 GPU skips), 7 stats tests and 6 diagnostic
+harness tests. Real SM121 component tests and full-model evidence are separate;
+this is not an upstream CI pass or clean release-wheel certification.
 
 Source-only follow-up: global graph-enabled CUTEDSL MoE adds about 29.113 GiB
 at the already-effective 512-token capacity. Do not enable it indiscriminately.

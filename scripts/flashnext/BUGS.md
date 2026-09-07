@@ -20,7 +20,11 @@ long-context support. The cache workaround and CPU-source scale fix have
 therefore progressed beyond their earlier pending full-model retries.
 
 MTP3 also completed two instrumented 32-token requests with 46/57 draft tokens
-accepted, no OOM, and clean shutdown. Longer quality/performance is in flight.
+accepted, no OOM, and clean shutdown. Eager MTP then completed 42 API requests;
+MTP with decode graphs completed 74. Both MTP configurations scored 5/2/1 in
+the small strict suite: inventory arithmetic and an unwanted Markdown fence
+around a correct JSON-filter answer. Preserve those failures. All 64 fixed-output
+requests in the extended MTP graph pilot had valid usage and exact lengths.
 
 ### Decode Graph Repeatability Remains Open
 
@@ -32,6 +36,24 @@ or numerical equivalence solely from these API results. QSA's short-sequence
 graph family already exists; its Python threshold branch is not independently
 evidence of a bug. Preserve this as an unresolved correctness qualification,
 with raw reports under `20260906-trt-graphs-1914` in sibling results.
+Eager MTP repeats matched 8/8 at C1 but 1/8 at C2. MTP graphs' first two pairs
+show the same match counts. The vLLM reference matched 0/8 at both concurrencies,
+with prefix caching enabled. These controls do not establish a common cause.
+The CPU-validated request-order probe is prepared but has not been run live.
+
+### Additional Source Findings, Deferred
+
+- MTP graph warmup at limit 2048/draft3 can produce duplicate short-family
+  keys instead of a near-limit long key. An absent key falls back to eager;
+  this is not evidence of wrong-family replay. Boundary workload qualification
+  and a focused key-generation regression remain future work.
+- The W4A16 loader can replace unequal gate/up global scales with their maximum
+  without preserving each half's effective scale. A source-extracted CPU
+  counterexample reproduces this conditional defect. It does **not** affect
+  this checkpoint's MTP experts: direct inspection found all 512 gate/up pairs
+  bitwise equal and all 1536 gate/up/down globals finite and positive. No large
+  weight payloads or GPU operations were used for that inspection. Do not add
+  a workaround for a condition this checkpoint does not trigger.
 
 ## Upstream Compatibility Gaps
 
