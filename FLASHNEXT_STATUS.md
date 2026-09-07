@@ -11,8 +11,8 @@ is claimed until measured. Keep spark-094a's working deployment unchanged.
 
 ## Current Checkpoint
 
-- Source head: `cea23010`; fresh native libraries are ready. The optional B12x
-  selector is integrated locally, disabled by default and not yet deployed.
+- Source head: `1175859d`; fresh native libraries are ready. B12x is opt-in,
+  deployed and measured with the expanded M1/2/4/8/16 dispatch envelope.
 - Verified full checkpoint and text-only view are on Spark-3883.
 - All 1,690 modules loaded in the second smoke (2m32s). Initialization then
   correctly rejected an undersized cache quota: 212,893,030 bytes versus
@@ -41,7 +41,9 @@ is claimed until measured. Keep spark-094a's working deployment unchanged.
   confirmed no remaining workers at 01:55 UTC. Log/metrics prefix:
   `/tmp/flashnext-serve-eager-20260906-1838`. The B12x candidate `24e2d81c` was cherry-picked as
   `1cd19650`; 104 isolated CPU tests pass, eight GPU cases skip locally,
-  and all touched-file pre-commit checks pass. No B12x full-model claim yet.
+  and all touched-file pre-commit checks pass. Expansion `1175859d` adds M2/M8:
+  116 CPU checks plus 36 actual-Linear changed-input GPU checks and 12 captures
+  pass; paired outputs are bitwise equal to CUTLASS in that component test.
 - `cea23010` adds opt-in smoke diagnostics using actual cumulative accepted/
   drafted counters, preserving unavailable values as null. Seven CPU checks
   and hooks pass. Instrumented runs are not primary performance measurements.
@@ -54,6 +56,7 @@ per concurrency. These include reasoning tokens, prefill and batch drain.
 | Deployment | C1 aggregate tok/s | C2 aggregate tok/s |
 | --- | ---: | ---: |
 | TensorRT eager, no MTP, CUTLASS | 10.84 / 11.50 | 21.87 / 20.91 |
+| TensorRT eager, no MTP, B12x dense | 13.68 / 14.79 | 26.98 / 28.19 |
 | Unchanged vLLM reference, graphs + MTP3 | 34.99 / 37.20 | 55.04 / 58.13 |
 
 All 32 requests per engine completed with exact lengths and no API errors.
@@ -68,7 +71,26 @@ reviewed correct Python function left automatically unscored. Reference was
 5 passed, 2 failed, 1 unscored. Both got inventory arithmetic wrong; keep that
 failure visible rather than claiming general accuracy from this small suite.
 Artifacts are in sibling `flashnext-results`, prefixes `20260906-trt-eager-1838`
-and `20260906-vllm-pilot`. Next: qualify B12x M2/M8, full B12x A/B, graphs, MTP.
+and `20260906-vllm-pilot`. B12x artifacts use `20260906-trt-b12x-1901`;
+all eight quality and two warmup responses match the CUTLASS baseline exactly.
+The B12x pilot completed all 32 fixed-output requests without errors. Its guard
+was stopped deliberately, with cleanup confirmed at 02:14 UTC September 7.
+
+### Active Experiment
+
+Decode graph server launched at 02:14 UTC with the same B12x code/environment,
+changing only `cuda_graph_config` to batch sizes `[1, 2]`, padding disabled.
+Still no MTP, FP32 recurrent/BF16 KV, 2048 sequence limit. Container log/metrics:
+`/tmp/flashnext-serve-graphs-20260906-1914`. The 25-minute host-memory watchdog
+remains active. API alias `flashnext-trt-graphs`, client tunnel port 18082.
+Graph correctness/performance is not yet established. Next: MTP3 diagnostic
+with `--collect-stats`, then performance/quality if it fits and works.
+
+Source-only follow-up: global graph-enabled CUTEDSL MoE adds about 29.113 GiB
+at the already-effective 512-token capacity. Do not enable it indiscriminately.
+QSA FP8 KV and separate short/long graph families exist on current main, but
+need full-model validation; do not classify the Python threshold branch alone
+as a graph correctness bug. N96 BF16 caching remains deferred pending profiling.
 
 ## Provenance (2026-09-06)
 
