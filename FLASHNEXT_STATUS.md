@@ -11,6 +11,36 @@ is claimed until measured. Keep spark-094a's working deployment unchanged.
 
 ## Current Checkpoint
 
+### Completed Follow-up: September 7, 21:43 UTC
+
+- **M32 does not qualify as a performance keeper.** Three fresh tuned comparisons
+  passed 72 numerical checks and 10,800 graph replays. B12x M32 graph-time deltas
+  versus CUTLASS were -1.40%, +0.80%, +0.85% for N16384/K2560 and -2.92%,
+  +3.86%, -6.88% for N2560/K6144; negative means faster. No reproducible gain.
+- The previous roughly 2.3x component result used default tactics. Important
+  correction: `enable_autotuner=false` disables the global TRT pass, but FI
+  MXFP8 still tunes during graph warmup. The old B8 serving log confirms this.
+  Tuned-vs-tuned results supersede default-only ratios for promotion decisions.
+- Both backends passed unchanged reference tolerances and produced exact paired
+  outputs on these synthetic loaded-Linear fixtures. This is not full-model
+  quality validation. Actual winning tactics and warm/capture cache hits were
+  recorded; all 24 saved cache hashes verified. No installed FI/runtime edits.
+- No M32 selector widening, full-model B8 trial, new throughput number or PR.
+  The prepared matched B8 client remains on standby. Best full-model comparison
+  remains experimental TRT 119.5087 vs vLLM 125.2630 tok/s, about 4.6% behind.
+- Two early harness preflights failed safely: container NVML hides foreign
+  Isaac PIDs, and device-property queries did not materialize a visible CUDA
+  context. Both raw failures are preserved, not classified as upstream defects.
+- Final probe cleanup at 21:40:37 UTC left no owned processes. Isaac unpaused at
+  21:42:22 UTC with unchanged container/init/StartedAt and recovered health;
+  its session was not stopped or recreated. No streaming-client test. 094a untouched.
+- Evidence: sibling `flashnext-results/m32-autotune-20260907/REPORT.md`, complete
+  raw archives/caches/source, and `isaac-m32-restoration-20260907.md`. Bounded
+  coding used terra; primary and Banach reviewed, primary ran GPU validation.
+- Next: public-wrapper FI non-atomic MTP qualification, then matched target
+  finalize-disabled repeatability controls and overlap on a qualified baseline.
+  Revisit M32 only with fixed-tactic/cache-behavior evidence, not wider dispatch.
+
 ### Active Follow-up: September 7, 17:05 UTC
 
 - Latest completed server trial: CUTLASS draft, autotuner ON, overlap OFF,
