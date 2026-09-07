@@ -66,6 +66,7 @@ These are experimental implementation mistakes, not claims about upstream.
 | CPU gather output aliases IDs | Two CPU int64 IDs share storage with BF16 output and `max_gather_rows=1`. Writing the first chunk corrupts IDs needed for the next. Independently reproduced. | Reject overlapping address spans before gathering, including strided ID views. Two overlap regressions plus a disjoint-shared-storage case pass. |
 | GPU loader index limit too small | Actual pinned index is 33,074,286 bytes; initial helper capped both index and per-file header at 16 MiB. | Separate bounded 64 MiB index allowance from 16 MiB per-file header limit. Oversized-index and bounded-read regressions pass; actual checkpoint parsing pending transfer. |
 | SM12x automatic backend loses user intent | Converting default/auto to explicit `flashinfer` makes a missing engine warmup raise instead of retaining a supported untuned path. Reference-only shapes also requested unnecessary tuning. | Preserve `auto`, exclude reference-only shapes from tuning, and keep the prepared FlashInfer layout/default tactic on SM12x if tuning cannot run. Six independent engine regressions pass in `ed8858ea`. |
+| MXFP8 scale layout rejects CPU sources | First full-model smoke fails at layer 0's GDN projection: integrated-GPU `load_weight_shard` deliberately retains CPU scales, while the new FlashInfer interleave branch requires CUDA. | `c03087c7` reuses native CPU scale packing and retains FlashInfer for CUDA sources. Eight actual runtime cases pass, including byte-exact padded layouts, CPU-source loading into CUDA parameters and 16 numerical forwards; 42 CPU checks pass. Introduced by this fork's dispatch path, not an upstream loading failure. Full-model retry pending. |
 | Writable GPU mmap destroys reclaimability | Isolated probe found GPU access through default writable SafeTensors mappings created private-dirty/anonymous pages. | GPU delegate opens independent read-only mappings. Small-file tests observed zero anonymous/private-dirty/locked pages and successful own-file reclaim. Full-model pressure validation pending. |
 | Benchmark can misstate speculative performance | Text-event count is not token count; a one-event response cannot expose a decode interval. Failed streams could discard a whole batch's evidence. | Use server token usage, null unobservable decode estimates, validate termination/fixed length, preserve errors and partial results. 15 API/checkpoint helper tests pass. |
 
@@ -94,7 +95,7 @@ These are experimental implementation mistakes, not claims about upstream.
   Keep graphs off for initial validation; test threshold crossings and MTP
   state rollback separately. These probes do not prove full-model correctness.
 
-## Unvalidated Performance Opportunities
+## Additional Correctness Findings
 
 ### GDN Autotuning Corrupts Indexed State
 
@@ -116,7 +117,7 @@ These are experimental implementation mistakes, not claims about upstream.
   config combinations, including four/eight warps. No evidence here justifies
   copying that restriction; this is not proof for arbitrary long contexts.
 
-### Candidates
+## Unvalidated Performance Opportunities
 
 1. FlashInfer 0.6.18 B12x MXFP8: six real GDN projection shapes (M=1/4/16)
    passed fractional-weight, independent dequantized-reference and changed-input

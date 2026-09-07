@@ -38,9 +38,11 @@ is claimed until measured. Keep spark-094a's working deployment unchanged.
 Only spark-3883 is a deployment target. Existing Isaac Sim, CVAT and other
 services are unrelated and have not been stopped. The experiment container
 `trtllm-flashnext` has 84 GiB memory (no extra swap), 12 CPU and 4 GiB shm limits.
-The initial four-worker HF download was stopped; a resumable read-only rsync
-from the pinned checkpoint on 094a is now active. No full model load before PLE storage is
-bounded. Reassess available host memory before every model load.
+The checkpoint transfer is complete; all 34 shards passed SHA256 verification
+against the pinned Hugging Face blob IDs. PLE storage is bounded and the first
+full-model load was attempted. Reassess available host memory before every
+model load. The admission watchdog preserves an 8 GiB host reserve and cleans
+up only its own worker descendants.
 
 ## Findings and Work
 
@@ -189,7 +191,21 @@ server usage token counts, not text-event count. JSON artifacts are in the
 sibling `flashnext-results` directory; reusable harness and prompts live in
 `scripts/flashnext/`.
 
-No TensorRT-LLM full-model generation or matched comparison has run yet.
+The first TensorRT-LLM full-model load failed before generation: the integrated
+GPU loader left MXFP8 scales on CPU, but FlashInfer's scale interleave requires
+CUDA input. The watchdog cleaned up all owned descendants, with exit code 1.
+The log is `/tmp/flashnext-smoke-no-mtp-20260906-1734.log` inside the experiment
+container; adjacent `.metrics.jsonl` records admission and cleanup. Fix
+`c03087c7` reuses native CPU scale packing, retaining FlashInfer for CUDA
+sources. All eight real-runtime CPU/CUDA destination and padding cases passed,
+including 16 numerical forwards; 42 CPU checks and commit hooks passed.
+Retry log: `/tmp/flashnext-smoke-no-mtp-20260906-1749.log` in the container.
+No successful full-model generation or matched comparison is recorded yet.
+Minimum sampled host available memory was 16.886 GiB; cgroup peaks were
+26.083 GiB total and 15.918 GiB anonymous, with no OOM or limit events. These
+are sampled early-failure observations, not successful full-load peaks.
+GPU allocations are not adequately represented by these cgroup counters;
+the host-available-memory guard remains necessary.
 
 ## Performance Hypothesis
 
@@ -222,16 +238,19 @@ still unvalidated.
 - Native build source is a separate clean upstream tree; parent Python edits
   are in `/home/mihai/workspace/TensorRT-LLM-FlashNext` locally and need a final
   synchronization to the corresponding Spark workspace before validation.
-- Weight destination on 3883: `/home/mihai/models/flashnext-925d7be6`.
-  Transfer log: `/tmp/flashnext-weight-copy.log`; resumable rsync is active.
-  This destination is not mounted in the build container. Arrange a model
-  mount or move the completed experiment directory onto its workspace mount
-  before generating the text-only checkpoint view.
+- Verified weights on 3883: `/home/mihai/workspace/flashnext-weights-925d7be6`.
+  Transfer completed September 6 at 17:31 PDT and the owned directory was
+  moved onto the existing workspace mount. Container path:
+  `/host-workspace/flashnext-weights-925d7be6`. Text-only view is ready at
+  `/host-workspace/flashnext-text-925d7be6`.
 - `scripts/flashnext/prepare_model.py` validates complete indexed shards,
   excludes auxiliary calibration SafeTensors, and creates a new symlinked
   view with a copied text-only configuration. It never edits source weights.
 - Next validation order: full-runtime unit tests; no-MTP bounded text smoke;
   MTP; graphs; matched repeated performance measurements with quality gates.
+- Retry with `TRT_LLM_DISABLE_LOAD_WEIGHTS_IN_PARALLEL=1`: one worker still
+  queues all modules and waits for queued work after a failure. Sequential
+  loading uses the existing fail-fast path. Keep the 25-minute watchdog.
 - Do not switch all MoE layers to CUTEDSL at default wrapper capacities:
   source accounting estimates about 28.125 GiB extra static activations/scales
   across target layers. MTP-only B12x W4A16 is a separate candidate. CUTLASS
@@ -253,9 +272,9 @@ still unvalidated.
 - Base-model license needs separate provenance review: the mirror advertises
   Apache-2.0, while the official base has a Qwen community license. Do not infer
   redistribution or hosted-service permission from mirror metadata alone.
-- Both Spark Ethernet interfaces are currently down. The checkpoint copy is
-  read-only from 094a over Wi-Fi, seeded with completed pinned HF downloads.
-  Dataset transfer is resumable and may take hours at current link speed.
+- Both Spark Ethernet interfaces were down during transfer. The completed
+  checkpoint copy was read-only from 094a over Wi-Fi, seeded with pinned HF
+  downloads. The reference deployment was not modified.
 - Verify effective cgroups, not Docker configuration alone. The declared
   84 GiB/no-extra-swap limit initially left `memory.swap.max=max`. Reapplying
   `docker update --memory 84g --memory-swap 84g trtllm-flashnext` set it to zero;
