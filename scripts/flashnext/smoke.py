@@ -2,11 +2,33 @@
 # SPDX-License-Identifier: Apache-2.0
 """Bounded text-only Flash Next load and generation smoke, not a TPOT benchmark."""
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tensorrt_llm.llmapi.llm import LLM, RequestOutput
+
+
+def _collect_stats(llm: LLM, result: RequestOutput) -> dict:
+    # SpecSamplerBase.update_requests counts acceptance before stop truncation,
+    # excluding the target bonus token. PyExecutor accumulates paired verified
+    # counts and publishes spec_dec_totals in _handle_responses. Missing != zero.
+    totals = result.spec_dec_totals
+    return {
+        "request_id": result.id,
+        "request_spec_dec_totals": (
+            None if totals is None else {"accepted": totals[0], "drafted": totals[1]}
+        ),
+        # Queue batches may include earlier requests; retain IDs and raw counters.
+        # Do not sum iteration snapshots into completed-request acceptance totals.
+        "iteration_stats": llm.get_stats(timeout=2),
+    }
 
 
 def main() -> None:
@@ -17,6 +39,11 @@ def main() -> None:
     parser.add_argument("--max-tokens", type=int, default=384)
     parser.add_argument("--mtp", type=int, default=0)
     parser.add_argument("--autotune", action="store_true")
+    parser.add_argument(
+        "--collect-stats",
+        action="store_true",
+        help="Enable diagnostic iteration/request statistics; instrumented, not a perf run",
+    )
     parser.add_argument("--moe-backend", choices=("CUTLASS", "CUTEDSL"), default="CUTLASS")
     args = parser.parse_args()
     if not 0 < args.max_tokens <= 1024 or not 0 <= args.mtp <= 3:
@@ -35,6 +62,11 @@ def main() -> None:
 
     prompts = json.loads(args.prompts.read_text())
     spec_config = MTPDecodingConfig(max_draft_len=args.mtp) if args.mtp else None
+    stats_kwargs = (
+        {"enable_iter_perf_stats": True, "enable_iter_req_stats": True}
+        if args.collect_stats
+        else {}
+    )
     started = time.perf_counter()
     llm = LLM(
         model=str(args.model),
@@ -54,6 +86,7 @@ def main() -> None:
         disable_overlap_scheduler=True,
         enable_autotuner=args.autotune,
         speculative_config=spec_config,
+        **stats_kwargs,
     )
     load_s = time.perf_counter() - started
     records = []
@@ -71,6 +104,8 @@ def main() -> None:
                 "elapsed_s": elapsed,
                 "output_tokens_per_s_including_prefill": len(output.token_ids) / elapsed,
             }
+            if args.collect_stats:
+                record["stats"] = _collect_stats(llm, result)
             records.append(record)
             print(json.dumps(record), flush=True)
     finally:
@@ -90,6 +125,24 @@ def main() -> None:
         "max_seq_len": 2048,
         "requests": records,
     }
+    if args.collect_stats:
+        resolved = llm.args.speculative_config
+        report["stats_collection"] = {
+            "instrumented": True,
+            "retrieval_in_elapsed_s": False,
+            "iteration_stats_scope": "Raw queue batches, not necessarily limited to this request",
+            "request_totals_source": "RequestOutput.spec_dec_totals (accepted, drafted)",
+            "request_totals_semantics": (
+                "Cumulative verified draft tokens; accepted excludes the target bonus token. "
+                "MTP acceptance is before EOS/output-limit truncation, not emitted-token count. "
+                "Null means unavailable, not zero. Iteration counters are not summed."
+            ),
+            "speculative_config_source": (
+                "LLM.args.speculative_config after load; frontend, not worker introspection"
+            ),
+            "speculative_config": None if resolved is None else resolved.model_dump(mode="json"),
+            "spec_dec_mode": None if resolved is None else resolved.spec_dec_mode.name,
+        }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n")
 
