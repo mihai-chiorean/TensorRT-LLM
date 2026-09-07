@@ -101,6 +101,7 @@ def test_sm121_missing_warmup_preserves_backend_intent_and_scale_layout(
     out_features: int,
 ) -> None:
     native = _mock_device(monkeypatch, (12, 1))
+    native.block_scale_interleave.side_effect = lambda scale: scale.flatten()
     flashinfer = _mock_flashinfer(monkeypatch)
     flashinfer.autotune.side_effect = lambda: nullcontext()
     if backend is not None:
@@ -192,5 +193,8 @@ def test_sm121_missing_warmup_preserves_backend_intent_and_scale_layout(
             assert args[1].data_ptr() == weight_pointer
             assert args[3] is layer.weight_scale
             assert flashinfer.mm_mxfp8.call_args.kwargs["backend"] == "cutlass"
-    for op in vars(native).values():
-        op.assert_not_called()
+    assert native.block_scale_interleave.call_count == int(eligible)
+    flashinfer.block_scale_interleave.assert_not_called()
+    for name, op in vars(native).items():
+        if name != "block_scale_interleave":
+            op.assert_not_called()

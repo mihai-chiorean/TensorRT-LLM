@@ -3501,10 +3501,12 @@ class MXFP8LinearMethod(LinearMethodBase):
         and flatten to the 1D layout the kernel expects. Reference path: copy
         verbatim into the 2D parameter.
         """
-        if self._use_flashinfer_sm12x:
+        if self._use_flashinfer_sm12x and scale_2d.is_cuda:
             swizzled = self._flashinfer_interleave(scale_2d)
             copy_weight(module.weight_scale, swizzled)
-        elif self.use_cutlass:
+        elif self.use_cutlass or self._use_flashinfer_sm12x:
+            # Integrated-GPU loading retains CPU scales until placement. The
+            # native layout op supports CPU tensors; FlashInfer requires CUDA.
             swizzled = torch.ops.trtllm.block_scale_interleave(scale_2d)
             copy_weight(module.weight_scale, swizzled)
         else:

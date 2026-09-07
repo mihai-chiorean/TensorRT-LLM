@@ -41,6 +41,9 @@ def linear_module(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
         "flashinfer_mxfp8_autotune",
         "flashinfer_mxfp8_decode_graph_capture",
         "MXFP8LinearMethod",
+        "load_weight_shard",
+        "load_weights_vanilla_helper",
+        "copy_weight",
     }
     body = [ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0)]
     for node in tree.body:
@@ -52,10 +55,6 @@ def linear_module(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
         ):
             body.append(node)
 
-    def copy_weight(target: torch.Tensor, source: torch.Tensor) -> None:
-        with torch.no_grad():
-            target.copy_(source)
-
     module = ModuleType("linear_under_test")
     module.__dict__.update(
         torch=torch,
@@ -65,7 +64,7 @@ def linear_module(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
         ContextVar=ContextVar,
         contextmanager=contextmanager,
         LinearMethodBase=object,
-        copy_weight=copy_weight,
+        is_device_integrated=lambda: True,
         fp4_utils=SimpleNamespace(
             pad_up=lambda value, alignment: (value + alignment - 1) // alignment * alignment
         ),
@@ -165,8 +164,10 @@ def test_sm121_flashinfer_preserves_weights_and_avoids_native_ops(
     assert not method.use_cutlass and method._use_flashinfer_sm12x
     assert method.backend == ("flashinfer" if backend == "flashinfer" else "auto")
     scales = torch.full((128, 4), 127, dtype=torch.uint8)
+    native.block_scale_interleave.side_effect = lambda scale: scale.flatten()
     method._store_scale(module, scales)
-    flashinfer.block_scale_interleave.assert_called_once_with(scales)
+    native.block_scale_interleave.assert_called_once_with(scales)
+    flashinfer.block_scale_interleave.assert_not_called()
     x = torch.ones((1, 2, 128), dtype=torch.bfloat16)
     quantized = x.reshape(2, 128).to(torch.float8_e4m3fn)
     activation_scales = torch.full((512,), 127, dtype=torch.uint8)
@@ -189,8 +190,9 @@ def test_sm121_flashinfer_preserves_weights_and_avoids_native_ops(
         "use_8x4_sf_layout": False,
         "backend": "cutlass",
     }
-    for op in vars(native).values():
-        op.assert_not_called()
+    for name, op in vars(native).items():
+        if name != "block_scale_interleave":
+            op.assert_not_called()
 
 
 @pytest.mark.parametrize(
