@@ -3454,7 +3454,7 @@ class MXFP8LinearMethod(LinearMethodBase):
                         and input.device == self._b12x_device
                         and input.dtype == torch.bfloat16
                         and module.dtype == torch.bfloat16
-                        and input.shape[0] in (1, 4, 16)):
+                        and input.shape[0] in (1, 2, 4, 8, 16)):
                     fi_backend = "b12x"
                 output = flashinfer_mxfp8(
                     act_e4m3,

@@ -29,7 +29,7 @@ linear_module = dispatch_tests.linear_module
 
 @pytest.mark.parametrize("outer", [None, "auto", "flashinfer"])
 @pytest.mark.parametrize("n,k", [(16384, 2560), (2560, 6144)])
-@pytest.mark.parametrize("m", [1, 4, 16])
+@pytest.mark.parametrize("m", [1, 2, 4, 8, 16])
 def test_b12x_validated_calls_preserve_operands_and_outer_intent(
     linear_module: ModuleType,
     monkeypatch: pytest.MonkeyPatch,
@@ -91,8 +91,8 @@ def test_b12x_validated_calls_preserve_operands_and_outer_intent(
         (None, (12, 1), 2560, 6144, 4, torch.bfloat16, torch.bfloat16, "cuda:0"),
         ("cutlass", (12, 1), 2560, 6144, 4, torch.bfloat16, torch.bfloat16, "cuda:0"),
         ("b12x", (12, 0), 2560, 6144, 4, torch.bfloat16, torch.bfloat16, "cuda:0"),
-        ("b12x", (12, 1), 2560, 6144, 2, torch.bfloat16, torch.bfloat16, "cuda:0"),
-        ("b12x", (12, 1), 2560, 6144, 8, torch.bfloat16, torch.bfloat16, "cuda:0"),
+        ("b12x", (12, 1), 2560, 6144, 3, torch.bfloat16, torch.bfloat16, "cuda:0"),
+        ("b12x", (12, 1), 2560, 6144, 7, torch.bfloat16, torch.bfloat16, "cuda:0"),
         ("b12x", (12, 1), 2560, 6144, 17, torch.bfloat16, torch.bfloat16, "cuda:0"),
         ("b12x", (12, 1), 2560, 6144, 128, torch.bfloat16, torch.bfloat16, "cuda:0"),
         ("b12x", (12, 1), 128, 2560, 4, torch.bfloat16, torch.bfloat16, "cuda:0"),
