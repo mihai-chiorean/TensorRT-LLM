@@ -11,7 +11,44 @@ is claimed until measured. Keep spark-094a's working deployment unchanged.
 
 ## Current Checkpoint
 
-### Active Follow-up: September 7, 16:00 UTC
+### Active Follow-up: September 7, 16:30 UTC
+
+- Same-host vLLM cap8 completed all four fixed128 cells: C4 rounds
+  **65.9303 / 84.7471**, pooled **74.1638**; C8 **120.6542 / 130.2380**,
+  pooled **125.2630** aggregate tok/s. Our experimental MTP-only B12x B8
+  pooled C8 **119.5087** is **4.5938% lower**, not an engine win. All 128
+  performance requests succeeded; tiny quality remained 6/1/1. Precision,
+  context and cache configuration differences remain documented. Full report:
+  sibling results `20260907-vllm-3883-cap8-1556-report.md`.
+- Cap8 cleanup completed **16:15:58 UTC**, no remaining owned processes or
+  OOM. Minimum host available memory was 14.918 GiB; actual KV 12.52 GiB.
+  First-round C4 slowdown appears in both engines, without a proven cause.
+- Actual-checkpoint non-atomic MTP qualification completed 480 eager/graph
+  observations. Forced small-M non-atomic plus unchanged M8 AUTO control had
+  **80/80 exact adjacent repeats and 60/60 exact graph/eager comparisons**;
+  both AUTO arms had only 16/80 and 12/60, all their exact cases at M8.
+  All independent-reference checks passed the unchanged 0.02 tolerance.
+  Overall attempt remains failed because five direct-AUTO repeat checks
+  exceeded 0.005. Do not erase control failures or infer general model quality.
+  This changes kernel scheduling as well as reduction order; timing is next.
+  Frozen evidence: `nonatomic-attempt1-20260907T1616/REPORT.md` in results.
+- Dense M16/M32 B12x qualification passed **24/24** checks on two loaded
+  Linear weight shapes, with exact CUTLASS/B12x and eager/graph agreement and
+  zero per-replay allocation deltas. Production M32 still selects CUTLASS.
+  This is an explicit default-tactic component test, not autotuned production
+  dispatch or measured speedup. First attempt failed a harness allocation
+  check affected by unrelated tensor lifetimes; preserve its raw failure.
+  Corrected probe SHA `4283d3d2aa9f523ba21428ea675616b643111cc28f5b4d75328b10f88567d260`;
+  clean exit at **16:27:35 UTC**. No runtime selector expansion yet.
+- User preference: bounded coding slices use **gpt-5.6-terra** where available;
+  primary retains integration, independent review and GPU deployment decisions.
+  Ampere repaired the small probe; Schrodinger owns native MTP integration.
+- Next: separate MTP timing probe, then B4 CUTLASS-draft autotuner ON with
+  overlap OFF, quality and token-ID gates before performance promotion.
+  Isaac remains recreated/stopped during this exclusive GPU sequence;
+  spark-094a remains unchanged.
+
+### Earlier Follow-up: September 7, 16:00 UTC
 
 - Same-host vLLM cap4 baseline succeeded: C1 **37.2720** and C2 **59.0899**
   aggregate tok/s, one round each; C4 two-round pooled **88.0300**, C8 queued
