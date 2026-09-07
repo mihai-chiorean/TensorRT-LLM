@@ -57,6 +57,7 @@ per concurrency. These include reasoning tokens, prefill and batch drain.
 | --- | ---: | ---: |
 | TensorRT eager, no MTP, CUTLASS | 10.84 / 11.50 | 21.87 / 20.91 |
 | TensorRT eager, no MTP, B12x dense | 13.68 / 14.79 | 26.98 / 28.19 |
+| TensorRT decode graphs, no MTP, B12x dense | 17.66 / 20.19 | 33.71 / 36.01 |
 | Unchanged vLLM reference, graphs + MTP3 | 34.99 / 37.20 | 55.04 / 58.13 |
 
 All 32 requests per engine completed with exact lengths and no API errors.
@@ -75,16 +76,25 @@ and `20260906-vllm-pilot`. B12x artifacts use `20260906-trt-b12x-1901`;
 all eight quality and two warmup responses match the CUTLASS baseline exactly.
 The B12x pilot completed all 32 fixed-output requests without errors. Its guard
 was stopped deliberately, with cleanup confirmed at 02:14 UTC September 7.
+Graph artifacts use `20260906-trt-graphs-1914`: all 32 fixed-output requests
+succeeded. Pooled C1 throughput increased 32.54% and C2 26.30% versus B12x
+eager. The eight-case strict quality score is unchanged, but six quality texts
+differ. More importantly, C1 repetitions matched zero of eight texts, while
+C2 repetitions matched all eight. Numerical or state-dependent causes are
+under investigation; these results do not establish graph/eager equivalence.
+The graph guard was stopped after loadgen finished; cleanup completed at
+02:28 UTC September 7. The reference remains faster.
 
 ### Active Experiment
 
-Decode graph server launched at 02:14 UTC with the same B12x code/environment,
-changing only `cuda_graph_config` to batch sizes `[1, 2]`, padding disabled.
-Still no MTP, FP32 recurrent/BF16 KV, 2048 sequence limit. Container log/metrics:
-`/tmp/flashnext-serve-graphs-20260906-1914`. The 25-minute host-memory watchdog
-remains active. API alias `flashnext-trt-graphs`, client tunnel port 18082.
-Graph correctness/performance is not yet established. Next: MTP3 diagnostic
-with `--collect-stats`, then performance/quality if it fits and works.
+MTP3 eager diagnostic launched at 02:30 UTC September 7 with the same B12x
+environment, CUTLASS MoE, no graphs/overlap/autotuning, FP32 recurrent/BF16 KV
+and 2048 sequence limit. It generates at most 32 tokens on each of two prompts
+with `--collect-stats`. Container log/metrics prefix:
+`/tmp/flashnext-smoke-mtp3-20260906-1930`. The 25-minute host-memory watchdog
+remains active. This is an instrumented compatibility/acceptance test, not a
+primary performance measurement. Graph output repeatability is being audited
+independently without concurrent GPU work.
 
 Source-only follow-up: global graph-enabled CUTEDSL MoE adds about 29.113 GiB
 at the already-effective 512-token capacity. Do not enable it indiscriminately.
