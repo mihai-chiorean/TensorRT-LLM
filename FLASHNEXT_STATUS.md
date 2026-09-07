@@ -11,7 +11,39 @@ is claimed until measured. Keep spark-094a's working deployment unchanged.
 
 ## Current Checkpoint
 
-### Active Follow-up: September 7, 14:55 UTC
+### Active Follow-up: September 7, 15:31 UTC
+
+- MTP-only B12x batch-8 completed: C4 rounds **54.2628 / 84.9471**,
+  pooled **66.2232** aggregate tok/s; C8 **118.3147 / 120.7270**, pooled
+  **119.5087**. CUTLASS-draft B8 pooled C8 was **98.6777**. This is an
+  observed 21.1% deployment-profile gain, not yet a qualified keeper.
+  All 128 fixed-output requests succeeded; tiny C8 quality remained 6/1/1.
+  Preserve both rounds: first-pass C4 slowdown is substantial in both arms.
+- Actual-checkpoint component qualification found small numerical errors
+  versus independent references, but B12x M1/2/4 differed on all 42 adjacent
+  repeated calls; M8 was exact on all 14. CUTLASS was exact on all 56.
+  Small-M BF16 atomic accumulation is a source-backed hypothesis, not proof
+  that all full-model differences are harmless. A separate non-atomic probe
+  is being implemented by Ampere on **gpt-5.6-terra**, with parent integration
+  and independent review before any GPU grant.
+- Full-model token-ID diagnostic completed 40/40 protocol-valid requests.
+  Only 3/24 sentinel comparisons were exact; all eight immediate repeats
+  differed before any short/long stress phase. Keep the candidate experimental.
+  Artifacts: sibling results `20260907-mtp-b12x-b8-tokenids-1522/` and
+  `20260907-trt-mtp-only-b12x-b8-1513-report.md`.
+- Parent deliberately stopped the completed TRT server. Guard cleanup at
+  **15:29:42 UTC** reports no remaining owned processes. Same-host vLLM cap4
+  is now loading in `flashnext-vllm-replica-cap4`, under 84 GiB / swap0 /
+  12 CPU limits and the 25-minute guard. Log prefix in the replica's host
+  `logs/` directory: `vllm-cap4-20260907T153030Z`; local API tunnel 18084.
+  No simultaneous TRT model is running. Spark-094a remains unchanged.
+- Same-host replica preparation finished before the TRT B8 measurement:
+  exact pinned image and nine recipe patches, original checkpoint, and
+  byte-verified packed PLE table. These AGPL recipe files stay outside the
+  Apache-licensed TRT source. Model admission and same-host performance
+  remain pending; do not substitute older different-host results.
+
+### Resumed Checkpoint: September 7, 14:55 UTC
 
 - User resumed the performance effort. The previous server ended on its
   25-minute watchdog at 07:46:35 UTC with no remaining owned processes or OOM.
@@ -267,8 +299,9 @@ as a graph correctness bug. N96 BF16 caching remains deferred pending profiling.
 
 ## Safety
 
-Only spark-3883 is a deployment target. Existing Isaac Sim, CVAT and other
-services are unrelated and have not been stopped. The experiment container
+Only spark-3883 is a deployment target. Isaac Sim was stopped with explicit
+authorization and its container recreated but not restarted; see the restoration
+record above. CVAT and other unrelated services remain running. The experiment container
 `trtllm-flashnext` has 84 GiB memory (no extra swap), 12 CPU and 4 GiB shm limits.
 The checkpoint transfer is complete; all 34 shards passed SHA256 verification
 against the pinned Hugging Face blob IDs. PLE storage is bounded and the first
