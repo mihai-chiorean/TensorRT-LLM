@@ -11,7 +11,63 @@ is claimed until measured. Keep spark-094a's working deployment unchanged.
 
 ## Current Checkpoint
 
-### Active Follow-up: September 7, 16:30 UTC
+### Active Follow-up: September 7, 17:05 UTC
+
+- Latest completed server trial: CUTLASS draft, autotuner ON, overlap OFF,
+  active cap4. Two-round pooled aggregate tok/s: **C1 31.7180, C4 71.5035,
+  C8 queued above cap4 75.5225**. All 192 fixed128 requests succeeded.
+  C2 was deliberately omitted. Previous OFF profile: 28.9893 / 72.8494 /
+  74.8724. Warmup and phase histories differ; these are not isolated causal
+  gains. No clear concurrency gain, and C1 second-round rates are close.
+- Quality C1 5/2/1 and C4 6/1/1 retain their failures. Equal totals conceal
+  changed cases: C1 order-filter formatting improves, latest-owner retrieval
+  newly violates JSON-only formatting, and inventory remains wrong. All final
+  stable_unique functions pass manual reading but remain automatically
+  unscored, never executed. No general quality-parity claim.
+- The separate 40-request ID diagnostic completed, but only **2/24** sentinel
+  pairs were exact, including **1/8** immediate repeats. This is with the
+  CUTLASS drafter, so B12x draft atomics cannot explain all observed variability.
+  Source/cache audit identifies tuned target NVFP4 GEMM2 FINALIZE tactics
+  using atomic BF16 scatter. The existing `moe_config.disable_finalize_fusion`
+  documents a determinism tradeoff; this is not by itself a new upstream bug.
+  Causality needs the matched OFF control, then ON with only fusion disabled.
+  Use fresh caches and repeat qualityC1/C4 before the ID protocol in both.
+- Dense explicit-FI M16/M32 timing passed 24 numerical checks and completed
+  72 timing records / 3,600 graph replays. At M32, mean graph-call milliseconds
+  CUTLASS/B12x were **0.494479 / 0.212321** for N16384/K2560 and
+  **0.060211 / 0.025226** for N2560/K6144. Graphs include activation quantization,
+  GEMM and bias. This roughly 2.3x component result uses default tactics;
+  it is NOT a production/full-model speedup. Autotuned controls must precede
+  any M32 selector expansion. Peak Torch allocation was 126,087,680 bytes.
+- Non-atomic MTP timing completed 270 records / 13,500 calls. Matched small-M
+  graph latency averages about 3% above AUTO, while all checked forced repeats
+  are exact; AUTO has 13 repeat-tolerance failures. New FI public option is
+  prepared in `../flashinfer-mtp-nonatomic-0618`, branch
+  `experiment/w4a16-tc-decode-option`, base `69ff11fc4954396d98326656dc85debd2223f637`.
+  Three production files, 26 additions / 1 deletion; 44 CPU-isolated tests and
+  pre-commit independently pass. **Uncommitted, not deployed or GPU-qualified
+  through the public wrapper.** Tracked by MIT-923 under MIT-912.
+- Next order: (1) qualify M32 against autotuned CUTLASS/B12x, then a narrowly
+  gated full-model B8 trial if still faster; (2) public-wrapper FI non-atomic
+  qualification, then separate TRT MTP opt-in and full-model checks;
+  (3) matched OFF/finalize-disabled repeatability controls before treating
+  autotuning as a keeper; (4) overlap trial with one qualified baseline fixed.
+  Do not stack unqualified changes or add percentages from component probes.
+- Server cleanup completed **16:57:37 UTC**; dense probe cleanup **16:58:25**,
+  both with no remaining owned PIDs. Both experiment containers are sleep-only
+  and API tunnels are closed. Isaac's existing recreated container started
+  **16:59:35**, emitted fresh `app ready` about **17:00:23**, and is healthy.
+  Streaming-client connectivity was not tested; earlier writable-layer and
+  unsaved-state limitations remain. Spark-094a was not modified.
+- Artifacts in sibling results: `20260907-trt-autotune-b4-1635-*`,
+  `20260907-autotune-b4-tokenids-1644/`,
+  `20260907-autotune-cutlass-repeatability-source-audit.md`,
+  `20260907-mxfp8-b12x-m16-m32-timing-report.md`,
+  `nonatomic-timing-attempt1-20260907T1633/REPORT.md`, and
+  `mtp-nonatomic-fi-api-implementation-handoff.md`. Primary owns review and
+  deployment; bounded probe coding used gpt-5.6-terra as requested.
+
+### Earlier Follow-up: September 7, 16:30 UTC
 
 - Same-host vLLM cap8 completed all four fixed128 cells: C4 rounds
   **65.9303 / 84.7471**, pooled **74.1638**; C8 **120.6542 / 130.2380**,
