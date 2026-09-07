@@ -1,8 +1,11 @@
 # Adapted from https://github.com/fla-org/flash-linear-attention/blob/main/fla/ops/common/chunk_delta_h.py
 # Adapted from https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/layers/attention/fla/chunk_delta_h.py
 # -*- coding: utf-8 -*-
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+# Original FLA portions retain their MIT license; see the repository LICENSE.
 
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import torch
 import triton
@@ -14,6 +17,30 @@ from tensorrt_llm._torch.modules.fla.op import exp, safe_exp
 from tensorrt_llm._torch.modules.fla.utils import is_nvidia_hopper
 
 NUM_WARPS = [2, 4] if is_nvidia_hopper else [2, 4, 8, 16]
+
+
+def _save_indexed_autotune_state(args: dict[str, Any],
+                                 reset_only: bool = False) -> None:
+    """Snapshot only active slots before a tuning trial, never the full pool."""
+    if reset_only or args["h0"] is None or args["h0_i"] is None:
+        return
+    # Match the kernel grid, not a possibly oversized indices buffer.
+    cu_seqlens = args["cu_seqlens"]
+    num_sequences = (args["k"].shape[0]
+                     if cu_seqlens is None else len(cu_seqlens) - 1)
+    indices = args["h0_i"][:num_sequences].to(torch.long)
+    args["_indexed_state_snapshot"] = (indices,
+                                       args["h0"].index_select(0, indices))
+
+
+def _restore_indexed_autotune_state(args: dict[str, Any],
+                                    exception: Optional[Exception]) -> None:
+    # Triton calls this after each trial, including compilation failures, but
+    # not after the final launch. Keep scratch in the trial's args, not globally.
+    snapshot = args.pop("_indexed_state_snapshot", None)
+    if snapshot is not None:
+        indices, state = snapshot
+        args["h0"].index_copy_(0, indices, state)
 
 
 @triton.heuristics({
@@ -30,6 +57,8 @@ NUM_WARPS = [2, 4] if is_nvidia_hopper else [2, 4, 8, 16]
         for nw in NUM_WARPS for ns in [2, 3, 4] for BV in [32, 64]
     ],
     key=["H", "K", "V", "BT", "USE_G"],
+    pre_hook=_save_indexed_autotune_state,
+    post_hook=_restore_indexed_autotune_state,
 )
 @triton.jit(do_not_specialize=["T"])
 def chunk_gated_delta_rule_fwd_kernel_h_blockdim64(
