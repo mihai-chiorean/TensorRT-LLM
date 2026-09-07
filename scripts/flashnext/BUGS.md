@@ -281,3 +281,28 @@ These are experimental implementation mistakes, not claims about upstream.
   selector, if available, before considering a kernel change or promotion.
 - Evidence: sibling `mtp-trt-experts-numerics-report-20260907.md`, structured
   summary and four unfiltered logs; no runtime change made by the probe.
+
+### Existing Non-Atomic Path Qualification
+
+- September 7 follow-up uses actual checkpoint experts and the real TRT
+  loader. Forced small-M direct routes with `tc_decode_fused_sum=False`
+  followed by FP32 top-k summation give 80/80 exact adjacent repeats and
+  60/60 exact graph/eager comparisons, including unchanged M8 AUTO controls.
+  AUTO arms each give only 16/80 and 12/60, with exactness confined to M8.
+  All independent-reference comparisons pass the unchanged 0.02 threshold.
+- The 480-observation qualification correctly exits 1: five direct-AUTO
+  repeat checks exceed the separate 0.005 tolerance. The forced candidate
+  has no failing checks. This also changes GEMM scheduling and tiles, so it
+  is not an isolated reduction-order ablation.
+- A separate counterbalanced timing probe completes 270 records / 13,500
+  measured calls. Only wrapper-AUTO repeat checks fail (13 observations);
+  preserve its `control_repeat_failures` status. CUDA-event graph-call times
+  for the forced small-M path remain close to AUTO. These are component
+  measurements with possible submission gaps, not a full-model speedup.
+- No FlashInfer production API or TRT runtime change has been made for this
+  selector. Required next gates: supported integration, full-model token-ID
+  and task checks, then matched repeated serving measurements.
+- Frozen artifacts: sibling results `nonatomic-attempt1-20260907T1616/`
+  and `nonatomic-timing-attempt1-summary.json`. Timing source SHA:
+  `c7a3644712fb12be8470a461be20d7ae2f8e4a5c3288561182e0b1865c858782`.
+  Guard cleanup at 16:32:49 UTC left no owned processes.
