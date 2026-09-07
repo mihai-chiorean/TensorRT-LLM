@@ -9,6 +9,32 @@ Run `Mia-AiLab/Qwen3.8-Flash-Next-NVFP4` correctly in TensorRT-LLM on
 Spark SM121, then compare matched workloads against vLLM. No performance win
 is claimed until measured. Keep spark-094a's working deployment unchanged.
 
+## Current Checkpoint
+
+- Source head: `a2fbebd2`; fresh native libraries are ready.
+- Verified full checkpoint and text-only view are on Spark-3883.
+- All 1,690 modules loaded in the second smoke (2m32s). Initialization then
+  correctly rejected an undersized cache quota: 212,893,030 bytes versus
+  a 347,713,584-byte minimum. No OOM; minimum host available was 21.66 GiB.
+- The third smoke loaded and warmed up successfully, but did not finish its
+  first generation request. Its 4,096-token setting produced only 64 usable
+  cache tokens. The parent stopped the owned guard at 01:11 UTC September 7;
+  cleanup completed with no remaining descendants. No OOM occurred.
+  Log/metrics prefix inside the container:
+  `/tmp/flashnext-smoke-no-mtp-20260906-1801`.
+- The cache-only probe reproduced capacity exhaustion at 65 tokens, after
+  successful prefill. Removing `max_tokens` and setting `avg_seq_len=2048`
+  passed allocation lifecycles for two 37+384-token requests, with 768-918 MiB
+  actual hot storage depending on the input byte quota. These are allocation
+  tests, not generated text. The configured byte quota
+  is not an absolute native allocation ceiling: the C++ allocator can increase
+  it to satisfy minimum slot constraints. Retain the independent host guard.
+- Full-model retry started at 01:32 UTC September 7 with those qualified
+  settings. Container log/metrics prefix:
+  `/tmp/flashnext-smoke-no-mtp-20260906-1832`.
+- No full-model generation or TRT throughput result yet. The B12x MXFP8
+  candidate remains separate at `24e2d81c`, ready for a controlled later A/B.
+
 ## Provenance (2026-09-06)
 
 - New fork: https://github.com/mihai-chiorean/TensorRT-LLM-FlashNext
@@ -199,8 +225,12 @@ container; adjacent `.metrics.jsonl` records admission and cleanup. Fix
 `c03087c7` reuses native CPU scale packing, retaining FlashInfer for CUDA
 sources. All eight real-runtime CPU/CUDA destination and padding cases passed,
 including 16 numerical forwards; 42 CPU checks and commit hooks passed.
-Retry log: `/tmp/flashnext-smoke-no-mtp-20260906-1749.log` in the container.
-No successful full-model generation or matched comparison is recorded yet.
+Retry log: `/tmp/flashnext-smoke-no-mtp-20260906-1750.log` in the container;
+watchdog confirmed launch at 00:50:47 UTC September 7. The earlier `1749`
+launch lost SSH before creating a log and is not a model-test result.
+That retry loaded all modules but stopped on the cache quota; see Current
+Checkpoint for the next run. No successful full-model generation or matched
+comparison is recorded yet.
 Minimum sampled host available memory was 16.886 GiB; cgroup peaks were
 26.083 GiB total and 15.918 GiB anonymous, with no OOM or limit events. These
 are sampled early-failure observations, not successful full-load peaks.

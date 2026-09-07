@@ -69,8 +69,24 @@ These are experimental implementation mistakes, not claims about upstream.
 | MXFP8 scale layout rejects CPU sources | First full-model smoke fails at layer 0's GDN projection: integrated-GPU `load_weight_shard` deliberately retains CPU scales, while the new FlashInfer interleave branch requires CUDA. | `c03087c7` reuses native CPU scale packing and retains FlashInfer for CUDA sources. Eight actual runtime cases pass, including byte-exact padded layouts, CPU-source loading into CUDA parameters and 16 numerical forwards; 42 CPU checks pass. Introduced by this fork's dispatch path, not an upstream loading failure. Full-model retry pending. |
 | Writable GPU mmap destroys reclaimability | Isolated probe found GPU access through default writable SafeTensors mappings created private-dirty/anonymous pages. | GPU delegate opens independent read-only mappings. Small-file tests observed zero anonymous/private-dirty/locked pages and successful own-file reclaim. Full-model pressure validation pending. |
 | Benchmark can misstate speculative performance | Text-event count is not token count; a one-event response cannot expose a decode interval. Failed streams could discard a whole batch's evidence. | Use server token usage, null unobservable decode estimates, validate termination/fixed length, preserve errors and partial results. 15 API/checkpoint helper tests pass. |
+| Smoke underbudgets recurrent states | The second run loaded all modules, then V2 Mamba rejected a 212,893,030-byte GPU quota below its 347,713,584-byte live-state/page minimum. | `4c2ec307` requests 1 GiB and fraction 0.5; `a2fbebd2` removes the token-derived restriction and sets explicit average sequence length 2048. Native constraint floors can exceed requested quotas. The old 0.05 fraction was too small. This is a harness configuration error, not a reason to weaken the runtime guard. Full-model retry pending. |
 
 ## Build and Admission Findings
+
+- The third full-model run completed loading and warmup, then stalled on its
+  first request. Although `max_tokens=4096` was requested, V2 cache sizing
+  advertised only 64 usable tokens and lowered its sequence limit to 64;
+  the LLM arguments still advertised 2048. One worker thread consumed about
+  one CPU core while GPU activity was consistent with unrelated Isaac Sim.
+  The owned guard stopped cleanly; no OOM occurred. A cache-only repro admits
+  prefill, then exhausts growth at capacity 65, after 28 simulated output
+  tokens. It does not independently reproduce the scheduler retry loop.
+  Removing `max_tokens` and using `avg_seq_len=2048` passes complete allocation
+  lifecycles for two 37+384-token requests. Six configurations were compared;
+  host-cache disabling alone does not fix the capacity collapse. C++
+  `StorageManager::computeSlotCountForLevel` also raises requested
+  quota to its minimum-slot floor, so requested byte caps do not alone prove
+  an upper bound on actual native allocation.
 
 - The first complete native compile stopped on a Git LFS pointer in
   `trtllmGen_bmm_export/KernelMetaInfo.h`. Its pinned 7,286,260-byte object was
