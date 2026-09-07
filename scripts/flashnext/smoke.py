@@ -44,9 +44,9 @@ def main() -> None:
         max_seq_len=2048,
         max_num_tokens=512,
         kv_cache_config=KvCacheConfig(
-            max_tokens=4096,
             max_gpu_total_bytes=1 << 30,
             free_gpu_memory_fraction=0.5,
+            avg_seq_len=2048,
             enable_block_reuse=False,
             mamba_ssm_cache_dtype="float32",
         ),
@@ -86,6 +86,7 @@ def main() -> None:
         "sequential_loader_requested": os.environ["TRT_LLM_DISABLE_LOAD_WEIGHTS_IN_PARALLEL"],
         "kv_cache_max_gpu_bytes_requested": 1 << 30,
         "kv_cache_free_fraction_requested": 0.5,
+        "kv_cache_avg_seq_len_requested": 2048,
         "max_seq_len": 2048,
         "requests": records,
     }
