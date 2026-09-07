@@ -26,6 +26,7 @@ def main() -> None:
         parser.error("prepare a text-only checkpoint view first with prepare_model.py")
     os.environ.setdefault("LLM_MODELS_ROOT", str(args.model.parent))
     os.environ.setdefault("TLLM_LOAD_WEIGHTS_NUM_WORKERS", "1")
+    os.environ.setdefault("TRT_LLM_DISABLE_LOAD_WEIGHTS_IN_PARALLEL", "1")
 
     import torch
 
@@ -44,7 +45,8 @@ def main() -> None:
         max_num_tokens=512,
         kv_cache_config=KvCacheConfig(
             max_tokens=4096,
-            free_gpu_memory_fraction=0.05,
+            max_gpu_total_bytes=1 << 30,
+            free_gpu_memory_fraction=0.5,
             enable_block_reuse=False,
             mamba_ssm_cache_dtype="float32",
         ),
@@ -81,6 +83,9 @@ def main() -> None:
         "moe_backend_requested": args.moe_backend,
         "autotuner": args.autotune,
         "loader_workers": os.environ["TLLM_LOAD_WEIGHTS_NUM_WORKERS"],
+        "sequential_loader_requested": os.environ["TRT_LLM_DISABLE_LOAD_WEIGHTS_IN_PARALLEL"],
+        "kv_cache_max_gpu_bytes_requested": 1 << 30,
+        "kv_cache_free_fraction_requested": 0.5,
         "max_seq_len": 2048,
         "requests": records,
     }
