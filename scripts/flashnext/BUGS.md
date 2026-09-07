@@ -7,6 +7,32 @@ Baseline: TensorRT-LLM `70feda63959fedf0f5f12c5e8c771e5392ce2d25`.
 Checkpoint: `925d7be6c14c6c9442ef83e8f05b5a3c39304f69`.
 No new NVIDIA issues or PRs have been opened for this experiment.
 
+## Latest Integration Evidence
+
+The entries below retain historical discovery-stage test counts. As of
+September 7, 02:35 UTC, the combined text-only path loads and generates on
+Spark SM121, with the exact source and artifact prefixes in
+`../../FLASHNEXT_STATUS.md`. CUTLASS eager, B12x dense eager, and B12x dense
+decode graphs each completed 32 fixed-output API requests. The small strict
+quality suite remains six passed, one arithmetic failure, one unscored.
+This qualifies short text serving at a 2048-token limit, not multimodal or
+long-context support. The cache workaround and CPU-source scale fix have
+therefore progressed beyond their earlier pending full-model retries.
+
+MTP3 also completed two instrumented 32-token requests with 46/57 draft tokens
+accepted, no OOM, and clean shutdown. Longer quality/performance is in flight.
+
+### Decode Graph Repeatability Remains Open
+
+The no-MTP graph API pilot produced coherent output and higher throughput,
+but C1 repetitions matched zero of eight response texts; C2 repetitions matched
+all eight. Six of eight quality texts differed from eager while strict outcomes
+were unchanged. Cause is unlocalized: do not infer benign rounding, corruption,
+or numerical equivalence solely from these API results. QSA's short-sequence
+graph family already exists; its Python threshold branch is not independently
+evidence of a bug. Preserve this as an unresolved correctness qualification,
+with raw reports under `20260906-trt-graphs-1914` in sibling results.
+
 ## Upstream Compatibility Gaps
 
 | Item | Evidence | Resolution and validation |

@@ -87,13 +87,21 @@ The graph guard was stopped after loadgen finished; cleanup completed at
 
 ### Active Experiment
 
-MTP3 eager diagnostic launched at 02:30 UTC September 7 with the same B12x
-environment, CUTLASS MoE, no graphs/overlap/autotuning, FP32 recurrent/BF16 KV
-and 2048 sequence limit. It generates at most 32 tokens on each of two prompts
-with `--collect-stats`. Container log/metrics prefix:
-`/tmp/flashnext-smoke-mtp3-20260906-1930`. The 25-minute host-memory watchdog
-remains active. This is an instrumented compatibility/acceptance test, not a
-primary performance measurement. Graph output repeatability is being audited
+MTP3 eager diagnostic succeeded at 02:33 UTC September 7: all 1804 modules
+loaded, initialization 254.75 s, two 32-token requests completed with coherent
+prefixes. Verified request counters are 22/27 and 24/30 accepted/drafted,
+46/57 combined (80.70%). Instrumented short-request rates including prefill
+are 16.40 and 18.37 tok/s, not primary performance measurements. Frontend mode
+is MTP_EAGLE_ONE_MODEL; strict acceptance, no relaxed-thinking acceptance.
+Log/metrics prefix `/tmp/flashnext-smoke-mtp3-20260906-1930`; clean exit 0,
+no remaining owned processes after cleanup at 02:33:44 UTC.
+
+MTP3 eager API validation launched at 02:35 UTC with the same B12x environment,
+CUTLASS MoE, no graphs/overlap/autotuning, FP32 recurrent/BF16 KV and 2048
+sequence limit. Only the speculative configuration changes from the B12x eager
+API baseline; diagnostic stats are disabled. Container log/metrics prefix:
+`/tmp/flashnext-serve-mtp3-eager-20260906-1935`. The 25-minute host-memory
+watchdog remains active. Graph output repeatability is being audited
 independently without concurrent GPU work.
 
 Source-only follow-up: global graph-enabled CUTEDSL MoE adds about 29.113 GiB
