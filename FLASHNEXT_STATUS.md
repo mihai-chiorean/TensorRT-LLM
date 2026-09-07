@@ -11,7 +11,39 @@ is claimed until measured. Keep spark-094a's working deployment unchanged.
 
 ## Current Checkpoint
 
-### Active Follow-up: September 7, 15:31 UTC
+### Active Follow-up: September 7, 16:00 UTC
+
+- Same-host vLLM cap4 baseline succeeded: C1 **37.2720** and C2 **59.0899**
+  aggregate tok/s, one round each; C4 two-round pooled **88.0300**, C8 queued
+  above active cap4 **88.9154**. All 192 fixed-output requests succeeded.
+  C1/C2 second rounds were omitted to respect the guard; C4/C8 repeats were
+  prioritized before round2 began. Do not describe this as a full matrix.
+- Both vLLM quality phases scored 6 pass / 1 fail / 1 unscored. Corpus draft
+  acceptance counters were 16604/23979 (69.244%); prefix hits stayed zero.
+  These counts are not yet matched to TRT counting conventions. Tiny quality
+  checks and repeat text differences do not establish general accuracy parity.
+- Same hardware still does not mean identical settings: vLLM has 12.86 GiB
+  allocated FP8 KV, context262144 and the original multimodal model profile;
+  TRT uses a requested 2 GiB BF16 KV quota, context2048 and a text-only view.
+  Both use FP32 recurrent state per source/config audit. vLLM tunes fused MoE
+  GEMMs; TRT's main autotuner is disabled, although its FI MXFP8 graph warmup
+  already performs separate tuning. Main autotuner ON is the next config lever.
+- Cap4 parent termination completed **15:55:20 UTC**, no remaining workers;
+  GPU list empty, container sleep-only and port8013 free independently checked.
+  Cap8 now runs in the SAME physical `flashnext-vllm-replica-cap4` container,
+  changing active capacity to8 and graph token sizes to4/8/12/16/20/24/28/32.
+  Prefix: `vllm-cap8-reusecap4-20260907T155600Z`, endpoint localhost18084.
+  It retains the 25-minute watchdog and 84 GiB / swap0 / 12 CPU limits.
+- After cap8 cleanup: guarded actual-checkpoint non-atomic MTP comparison,
+  then the reviewed M16/M32 dense B12x qualification if ready. Neither has
+  executed on GPU yet. Separate autotuner and overlap trials must preserve
+  CUTLASS-draft controls rather than stack unresolved changes.
+- Full same-host baseline: sibling results
+  `20260907-vllm-3883-cap4-1530-report.md`, with raw cells, acceptance counters,
+  configuration, phase order, omitted cells, resource extrema and hashes.
+  Isaac remains recreated/stopped; spark-094a remains unchanged.
+
+### Earlier Follow-up: September 7, 15:31 UTC
 
 - MTP-only B12x batch-8 completed: C4 rounds **54.2628 / 84.9471**,
   pooled **66.2232** aggregate tok/s; C8 **118.3147 / 120.7270**, pooled
