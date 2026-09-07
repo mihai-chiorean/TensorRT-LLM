@@ -96,6 +96,28 @@ These are experimental implementation mistakes, not claims about upstream.
 
 ## Unvalidated Performance Opportunities
 
+### GDN Autotuning Corrupts Indexed State
+
+- Status: reproduced on SM121, fixed in `cdb81425`; not an SM121-only claim.
+- Site: `_torch/modules/fla/chunk_delta_h.py`, chunk-H autotuner and indexed
+  final-state alias to `h0`; production caller is `mamba/gdn_mixer.py`.
+- Root cause: benchmark trials repeatedly advance the caller's input state.
+  A reset-state warm call passes, while the original cold call fails an
+  independent recurrent reference. Startup warmup may hide this in some paths.
+- Fix: snapshot only indices used by the kernel grid, restore after each trial,
+  and leave final/cache-hit execution untouched. Never zero continued state or
+  clone the complete pool. Ignore unused index-buffer tails.
+- Tests: eleven CPU/GPU cases pass, including cold/warm equivalence, nonzero
+  state, decode, call ordering, padding and bounded allocation. Two active
+  FP32 slots use about 6 MiB even in a 32-slot pool. Exception cleanup is tested
+  at hook level. No full-model or cold graph-capture claim.
+- Separate issue: FLA's two-warp workaround followed an SM103 reproduction.
+  Our SM121 fixed-config probe passed 520 launches across 52 feasible shape/
+  config combinations, including four/eight warps. No evidence here justifies
+  copying that restriction; this is not proof for arbitrary long contexts.
+
+### Candidates
+
 1. FlashInfer 0.6.18 B12x MXFP8: six real GDN projection shapes (M=1/4/16)
    passed fractional-weight, independent dequantized-reference and changed-input
    graph tests. B12x and CUTLASS outputs were bit-identical. Three repetitions

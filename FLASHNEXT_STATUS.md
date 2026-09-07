@@ -107,6 +107,20 @@ bounded. Reassess available host memory before every model load.
   1.70 GiB host RSS. Complete attention-layer validation is in progress.
 - `ea1bdd87`: strict offline quality scorer and 109 scorer/client tests passed.
   It never executes generated code; the code case stays pending manual review.
+- `6dd3a484`: smoke defaults to one loader worker and uses `max_draft_len`.
+- `cdb81425`: first-call GDN chunk autotuning corrupted indexed recurrent
+  state. Bounded active-slot save/restore fixes it without warm-path copies.
+  Eleven focused CPU/GPU regressions pass, with independent code review.
+- Complete synthetic QSA layer: prefill, decode and sparse threshold crossing
+  through 2053 tokens pass an independent reference. Six GDN convolution/gate
+  component checks also pass. These are not checkpoint-weight validation.
+- Separate SM121 chunk-H repeatability probe: 52 feasible shape/config pairs,
+  ten identical-state launches each, passed bitwise and numerical checks.
+  This does not reproduce the reported SM103 warp-count bug; no blanket
+  two-warp restriction was added. Longer contexts remain untested.
+- Optional B12x dense branch: `experiment/flashnext-mxfp8-b12x`, commit
+  `24e2d81c`. Independent review, 98 CPU tests and 48 actual-Linear changed-input
+  checks passed. Defaults remain CUTLASS; do not enable before the baseline.
 - Native core build completed after resolving one pinned Git LFS header.
   Artifact staging/import validation and resumable weight transfer remain
   outstanding. No full-model TensorRT generation has run. Initial smoke disables autotuning explicitly;
@@ -157,6 +171,15 @@ code selects FP32 recurrent state, not the recipe's advertised BF16 state.
 Main KV uses fixed-scale E4M3; unit scales are consistent with initialization
 and checkpoint headers, but resident scale values were not inspected. These
 precision families guide the matched comparison; kernel equivalence is unproven.
+
+The eight-case reference quality run has five automated passes, one arithmetic
+failure (inventory), one JSON-format failure (correct code-trace value in a
+Markdown fence), and one manually reviewed correct function. The scorer retains
+its original 5/2/1 result; it never executes generated code. These are bounded
+regression cases, not a general model-quality benchmark. All 40 quality/perf
+prompt token arrays match between reference Transformers 5.15.1 and validation
+5.5.4. Raw ChatML is valid but omits the default template's extra 40 tokens;
+retain raw-completions versus default-chat distinctions in future reports.
 
 Arithmetic answer was 80 km/h. Hash-table output was coherent but truncated.
 This is an initial short-prompt reference, not a controlled throughput sweep.
@@ -209,6 +232,11 @@ still unvalidated.
   view with a copied text-only configuration. It never edits source weights.
 - Next validation order: full-runtime unit tests; no-MTP bounded text smoke;
   MTP; graphs; matched repeated performance measurements with quality gates.
+- Do not switch all MoE layers to CUTEDSL at default wrapper capacities:
+  source accounting estimates about 28.125 GiB extra static activations/scales
+  across target layers. MTP-only B12x W4A16 is a separate candidate. CUTLASS
+  MTP allocates a 4.6875 GiB BF16 buffer per forward, but dequantizes only routed
+  experts; allocation size is not DRAM traffic. Both paths need live measurement.
 - Matched benchmark design and metric limitations:
   [scripts/flashnext/BENCHMARK_PLAN.md](scripts/flashnext/BENCHMARK_PLAN.md).
   The two smoke prompts cannot exercise concurrency 4/8; use a full corpus.
