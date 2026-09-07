@@ -11,6 +11,83 @@ is claimed until measured. Keep spark-094a's working deployment unchanged.
 
 ## Current Checkpoint
 
+### Active Follow-up: September 7, 14:55 UTC
+
+- User resumed the performance effort. The previous server ended on its
+  25-minute watchdog at 07:46:35 UTC with no remaining owned processes or OOM.
+  No model benchmark continued during the interruption. GPU is now clear;
+  host available memory is about 116 GiB. Isaac remains recreated/stopped.
+- Completed MTP-only B12x batch-4 matrix: two-round pooled aggregate tok/s
+  C1 **32.0742**, C2 **55.9927**, C4 **84.4865**, C8 **88.1455** (queued above
+  active cap4). Baseline CUTLASS draft: **28.9893 / 47.9072 / 72.8494 / 74.8724**.
+  Unchanged vLLM reference: **35.6572 / 58.0639 / 77.4664 / 87.3707**.
+  These are deployment-profile observations with warmup and host differences,
+  not isolated causal gains or a general engine-win claim. All 256 fixed-output
+  requests succeeded. Minimum host available memory was 31.8778 GiB.
+- MTP-only B12x is **experimental, not a keeper yet**: C1 repeat text matched
+  only 2/32 versus baseline 32/32. Tiny quality scores remain 5/2/1 at C1 and
+  6/1/1 at C4 (pass/fail/unscored); coherent output does not resolve numerical
+  repeatability. Paired real-checkpoint MTP expert eager/graph numerics are next.
+- Full report: sibling results
+  `20260907-trt-mtp-only-b12x-b4-0721-report.md`; reference matrix is complete in
+  `20260907-vllm-corpus32-0636-final-report.md`. All rounds retained.
+- Concurrent lanes: Schrodinger owns bounded GPU MTP component qualification;
+  Hubble owns isolated same-host vLLM image/recipe/PLE preparation, no GPU launch
+  yet; Archimedes audits speculative repeatability. Heavy acquisition I/O
+  excludes primary performance measurements. Spark-094a stays read-only.
+- W4A4 B12x wrapper capacity candidate `3483785a` is reviewed separately and
+  **not integrated**. Installed FlashInfer static padding means cap512-to64
+  saves only about 0.863 GiB across 48 layers, not the initially hypothesized
+  18 GiB. Source proof and 199 CPU tests do not establish GPU qualification.
+  Do not attempt global B12x graphs on the incorrect smaller-memory estimate.
+
+### Earlier Overnight Sequence
+
+- September 7 overnight follow-up: user authorizes temporarily stopping competing
+  workloads on Spark-3883. Isaac Sim is the sole other GPU client, about 17 GiB
+  resident and 1.6 CPU cores. Its original Docker inspect is archived as
+  `20260907-isolation-isaac-before.json` in the results directory; restart policy
+  is `no`. Stopped at 06:22 UTC; it had `AutoRemove=true`, so restoration requires
+  recreating the container from its archived configuration/original launcher.
+  Recreated, not started, as `eaf2dd88a9ef` with exact configuration and bind
+  comparison; writable-layer/unsaved state was not preserved. All nine mounted
+  data paths remain. Start this recreated container only after owned model
+  workers are cleaned up. CVAT and idle BuildKit containers
+  remain running. First repeat unchanged batch-2 MTP3/graphs, then qualify and
+  measure batch/concurrency 4 and 8. Spark-094a remains unchanged.
+- Isolated batch-2 pilot completed: C1 23.1439 / 22.7565 tok/s, C2 40.0270 /
+  42.4992 aggregate tok/s, no API errors. Tiny quality set unchanged at 5 pass,
+  2 fail, 1 unscored. Host available minimum 24.4901 GiB; no OOM; verified
+  watchdog cleanup at 06:35:57 UTC. Isaac contention does not explain the whole
+  performance gap. Prefix-cache/TTFT differences need separate measurement.
+- Real target/draft native cache probes pass batch 4 and 8 at requested 2 GiB
+  frontend quota, including all-request 2048-capacity occupancy. Allocation-only,
+  not model correctness. Batch-4 full server started at 06:39 UTC under the same
+  guard; prefix caching and overlap remain off for this scaling experiment.
+- Isolated 32-prompt, fixed-128 results: batch 4 C1 25.8194/33.0465, C2
+  45.6901/50.3504, C4 71.2175/74.5579 tok/s. Batch 8 C4 50.5436/73.9342,
+  C8 95.9886/101.5218 aggregate tok/s. All requests succeeded. Reference C4
+  69.4645/87.5518 and C8 88.9388 on its first pass, but reference active cap
+  remains FOUR. Do not call the B8 result an equal-cap engine win. Cold/warm
+  and repeat variation are material; retain both rounds. Raw artifacts use
+  `20260907-trt-isolated-b4-0639`, `...b8-0700` and
+  `20260907-vllm-corpus32-0636` prefixes in sibling results.
+- Worker-only CPU affinity A/B/A: original 32.6969, all X925 34.2247, exact
+  original masks restored 34.3395 tok/s at pilot C1. No benefit established;
+  not a keeper. Twenty per-thread identities/masks were saved and restored,
+  including helpers inherited on CPU 2. No global affinity/cgroup changes.
+- Batch-8 watchdog cleanup completed 07:19:46 UTC; no remaining owned workers,
+  no OOM, minimum host available 23.0140 GiB. Isaac remains recreated/stopped.
+- Experimental default-off MTP-only B12x selector integrated as `72f24679`
+  from `596d9756`; independent 44 isolated CPU tests and touched-file hooks
+  pass. Only `modeling_qwen4_exp.py` was staged to the runtime, SHA256
+  `7d19b8930ab0056b9ee19f374eac2fcf8baf54d3aa4ca6a4050d65e0d5f85a2b`.
+  First full-model B4 graph experiment started 07:21 UTC, prefix
+  `flashnext-mtp-b12x-b4-20260907-0721`. GPU numerics/performance are pending;
+  this is not promoted over the working CUTLASS-MoE baseline.
+
+### Historical Shared-Host Checkpoint (Before Isolation)
+
 - **Working text-only port; benchmark checkpoint complete, not a vLLM win.**
   Best tested configuration is opt-in B12x dense + MTP3 + decode graphs:
   four fixed-output pairs pooled to 26.0622 tok/s at C1 and 38.9456 aggregate

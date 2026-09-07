@@ -20,7 +20,9 @@ and [the bug ledger](BUGS.md). Do not change the reference on `spark-094a`.
   Some answers failed arithmetic or exact formatting; this is not a broad
   accuracy certification. Decode graphs and eager MTP at concurrency 2 have
   unresolved repeatability caveats. Eager no-MTP was repeatable in both pilots.
-- The host is shared with unrelated services. Never stop those to run this.
+- The host is shared with unrelated services. Stop those only with explicit
+  operator authorization; the September 7 isolation campaign has that approval.
+  Record original state and restore stopped workloads after model cleanup.
   MTP plus graphs reached only 8.34 GiB host memory available in the extended
   pilot, close to the 8 GiB stop threshold. Do not increase workload limits or
   remove the guard based on a no-OOM result.

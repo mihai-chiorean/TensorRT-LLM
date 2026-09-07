@@ -197,3 +197,42 @@ These are experimental implementation mistakes, not claims about upstream.
    backend names alone do not establish equal numerics or better throughput.
 4. MTP length, graph capture and recurrent-state precision are tuning axes,
    but only after no-MTP correctness and stable memory admission.
+
+## Potential MTP Prefix-Reuse Defect
+
+- Status: source-only finding, not reproduced with a live prefix hit. Keep
+  Qwen4Exp MTP3 reuse OFF; no runtime fix or speed claim in this entry.
+- Trigger: V2 separate target/draft KV managers, an explicit reusable hybrid
+  state snapshot, and a subsequent target prefix hit. The reuse boolean alone
+  does not establish this trigger: default snapshot interval/offsets are empty.
+- Trace: `tensorrt_llm/_torch/pyexecutor/kv_cache/kv_cache_manager_v2.py`,
+  `_prepare_context_impl`, advances the shared request cursor after matching
+  target tokens. `_prepare_draft_resources` instead creates a fresh native
+  draft cache with lookup tokens `None`, stops committing, and reserves the
+  prefix capacity without restoring matching draft K/V. The native bridge is
+  `_create_kv_cache`; reserving pages does not initialize valid model state.
+  Native `cpp/tensorrt_llm/batch_manager/kv_cache_manager_v2/kvCacheManager.cpp:174`
+  skips `matchReuse` for an empty token span; `kvCache.cpp:1863`
+  `stopCommitting` finalizes commit state, not model-prefix reconstruction.
+- Follow-through: `_torch/pyexecutor/model_engine.py` builds only the remaining
+  context chunk. `_torch/speculative/eagle3.py`, `prepare_1st_drafter_inputs`
+  and `_run_draft_forward`, passes that chunk's target hidden states into the
+  MTP layer. `_torch/speculative/interface.py`,
+  `prepare_attn_metadata_for_draft_replay`, swaps cache layouts/pointers, not
+  missing prefix payloads. `_torch/models/modeling_qwen4_exp.py`,
+  `Qwen4ExpMTP.forward`, runs the ordinary attention layer; the auxiliary PLE
+  and indexer commit handlers do not rebuild draft-prefix K/V.
+- Risk: draft attention may consume prefix storage that was never populated
+  for this request. No initialization/recompute route was found in this bounded
+  active-path audit. This does not prove target-token corruption, a particular
+  acceptance effect, or an upstream-wide defect.
+- Smallest proposed fix: reject this Qwen4Exp MTP + separate V2 draft-cache +
+  target-reuse combination after effective cache selection, with an explicit
+  message to disable reuse. Do not silently zero pages, copy target K/V into
+  differently weighted draft layers, or treat pointer rebinding as restore.
+  Actual support needs coordinated target/draft prefix matching and retention,
+  or valid prefix reconstruction with the required target hidden states.
+  Neither implementation is part of the current checkpoint.
+- Evidence: sibling results `qsa-hybrid-mtp-prefix-reuse-eligibility.md` and
+  `mtp-draft-prefix-initialization-followup.md`. Reuse-OFF batch-4/8 native
+  allocation passes do not cover this finding; no new GPU/API test was run.
