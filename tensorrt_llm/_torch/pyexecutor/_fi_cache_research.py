@@ -66,14 +66,27 @@ def _validate_scope(llm_args: TorchLlmArgs, mapping: Mapping, checkpoint_dir: st
     if checkpoint_dir is None:
         raise ValueError("FI research cache requires a local text checkpoint config")
     config = json.loads((Path(checkpoint_dir) / "config.json").read_text())
-    if (
-        not isinstance(config, dict)
-        or config.get("architectures")
-        not in (["Qwen4ExpForCausalLM"], ["Qwen3_8FlashNextForCausalLM"])
-        or "vision_config" in config
-        or "text_config" in config
-    ):
-        raise ValueError("FI research cache requires a flattened Qwen4Exp text checkpoint")
+    if not isinstance(config, dict):
+        raise ValueError("FI research cache requires a Qwen4Exp text checkpoint")
+    flat_text = (
+        config.get("architectures") in (["Qwen4ExpForCausalLM"], ["Qwen3_8FlashNextForCausalLM"])
+        and "vision_config" not in config
+        and "text_config" not in config
+    )
+    # config_utils flattens these composite checkpoints only when text-only
+    # execution is explicitly requested; raw JSON retains the vision config.
+    composite_text = (
+        (config.get("model_type"), config.get("architectures"))
+        in (
+            ("qwen4_exp", ["Qwen4ExpForConditionalGeneration"]),
+            ("qwen3_8_flash_next", ["Qwen3_8FlashNextForConditionalGeneration"]),
+        )
+        and config.get("language_model_only") is True
+        and isinstance(config.get("text_config"), dict)
+        and bool(config["text_config"])
+    )
+    if not (flat_text or composite_text):
+        raise ValueError("FI research cache requires a Qwen4Exp text checkpoint")
 
 
 class FICacheResearchSession:

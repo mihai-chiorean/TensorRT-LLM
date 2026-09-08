@@ -256,7 +256,57 @@ def test_nested_scope(setup: SimpleNamespace, section: str, field: str, value: o
 )
 def test_checkpoint_scope(setup: SimpleNamespace, config: object) -> None:
     (setup.directory / "config.json").write_text(json.dumps(config))
-    with pytest.raises(ValueError, match="flattened"):
+    with pytest.raises(ValueError, match="text checkpoint"):
+        _begin(setup)
+
+
+@pytest.mark.parametrize(
+    "model_type,architecture",
+    [
+        ("qwen4_exp", "Qwen4ExpForConditionalGeneration"),
+        ("qwen3_8_flash_next", "Qwen3_8FlashNextForConditionalGeneration"),
+    ],
+)
+def test_composite_text_checkpoint(
+    setup: SimpleNamespace, model_type: str, architecture: str
+) -> None:
+    config = {
+        "model_type": model_type,
+        "architectures": [architecture],
+        "language_model_only": True,
+        "text_config": {"num_hidden_layers": 48},
+        "vision_config": {"depth": 27},
+    }
+    (setup.directory / "config.json").write_text(json.dumps(config))
+    _begin(setup)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"language_model_only": False},
+        {"language_model_only": None},
+        {"language_model_only": 1},
+        {"text_config": {}},
+        {"text_config": None},
+        {"text_config": [1]},
+        {"model_type": "other"},
+        {"architectures": ["Qwen4ExpForCausalLM"]},
+    ],
+)
+def test_composite_text_checkpoint_rejects_unsupported_scope(
+    setup: SimpleNamespace, overrides: dict
+) -> None:
+    config = {
+        "model_type": "qwen3_8_flash_next",
+        "architectures": ["Qwen3_8FlashNextForConditionalGeneration"],
+        "language_model_only": True,
+        "text_config": {"num_hidden_layers": 48},
+        "vision_config": {"depth": 27},
+        **overrides,
+    }
+    (setup.directory / "config.json").write_text(json.dumps(config))
+    with pytest.raises(ValueError, match="text checkpoint"):
         _begin(setup)
 
 
