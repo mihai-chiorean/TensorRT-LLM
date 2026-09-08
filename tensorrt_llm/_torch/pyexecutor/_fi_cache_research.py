@@ -45,8 +45,13 @@ def _validate_scope(llm_args: TorchLlmArgs, mapping: Mapping, checkpoint_dir: st
     ):
         raise ValueError("FI research cache requires rank-zero TP1/PP1/CP1")
     spec = llm_args.speculative_config
-    if spec is None or spec.decoding_type != "MTP" or spec.max_draft_len != 3:
-        raise ValueError("FI research cache requires explicit MTP draft length 3")
+    if (
+        spec is None
+        or spec.decoding_type != "MTP"
+        or type(spec.max_draft_len) is not int
+        or spec.max_draft_len not in (1, 3)
+    ):
+        raise ValueError("FI research cache requires explicit MTP draft length 1 or 3")
     if not llm_args.disable_overlap_scheduler or not llm_args.enable_autotuner:
         raise ValueError("FI research cache requires overlap OFF and global autotuner ON")
     if llm_args.moe_config.backend != "CUTLASS" or not llm_args.moe_config.disable_finalize_fusion:

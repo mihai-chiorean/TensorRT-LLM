@@ -233,7 +233,14 @@ def test_args_scope(setup: SimpleNamespace, field: str, value: object) -> None:
 @pytest.mark.parametrize(
     "section,field,value",
     [
+        ("speculative_config", "max_draft_len", 0),
         ("speculative_config", "max_draft_len", 2),
+        ("speculative_config", "max_draft_len", 4),
+        ("speculative_config", "max_draft_len", True),
+        ("speculative_config", "max_draft_len", 1.0),
+        ("speculative_config", "max_draft_len", 3.0),
+        ("speculative_config", "max_draft_len", "1"),
+        ("speculative_config", "max_draft_len", "3"),
         ("speculative_config", "decoding_type", "AUTO"),
         ("moe_config", "backend", "CUTEDSL"),
         ("moe_config", "disable_finalize_fusion", False),
@@ -243,6 +250,14 @@ def test_nested_scope(setup: SimpleNamespace, section: str, field: str, value: o
     setattr(getattr(setup.args, section), field, value)
     with pytest.raises(ValueError):
         _begin(setup)
+
+
+@pytest.mark.parametrize("draft_len", [1, 3])
+def test_mtp_draft_scope_accepts_only_explicit_lengths(
+    setup: SimpleNamespace, draft_len: int
+) -> None:
+    setup.args.speculative_config.max_draft_len = draft_len
+    _begin(setup)
 
 
 @pytest.mark.parametrize(
