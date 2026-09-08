@@ -26,7 +26,35 @@ the small strict suite: inventory arithmetic and an unwanted Markdown fence
 around a correct JSON-filter answer. Preserve those failures. All 64 fixed-output
 requests in the extended MTP graph pilot had valid usage and exact lengths.
 
-### Decode Graph Repeatability Remains Open
+### Fresh Finalize Controls: September 8
+
+The later three-arm SM121 experiment narrows one repeatability source. With
+CUTLASS draft, B4/MTP3, decode graphs and overlap OFF, all arms completed the
+same 40-request token-ID protocol. Native autotuner OFF/default finalize had
+24/24 exact sentinel pairs; ON/default had 0/24; ON with the existing
+`moe_config.disable_finalize_fusion=true` restored 24/24. Fresh cache/source
+audit associates B with target GEMM2 FINALIZE variants and C with only NONE
+variants. The former uses BF16 atomic scatter; the unfused reduction uses
+ordered top-k FP32 accumulation. This supports the hypothesis under the tested
+conditions, not proof of sole causality or a new upstream defect: the option
+already documents a determinism tradeoff. No performance improvement follows
+from token repeatability alone, and the small quality suite still fails
+arithmetic and some formatting cases.
+
+The separate patched FI public W4A16 wrapper passed 240 actual-checkpoint
+eager/graph observations and all 480 reference comparisons. Its explicit-false
+option had exact repeats; the default-true atomic control's
+repeat-tolerance observations remain preserved. This does not yet qualify the
+new TRT MTP-only adapter or full-model quality. The candidate changes scheduling
+and tile geometry as well as reduction order; never describe it as only a
+precision change. See sibling `flashnext-results/nonatomic-public-20260907/`
+and `20260907-finalize-controls-report.md` for raw artifacts and limitations.
+
+Both ON controls also skipped unsupported shared-memory tactics during draft
+autotuning. Startup completed normally. Earlier candidate filtering could be
+investigated separately; no measured decode gain or fatal error is established.
+
+### Historical Decode Graph Repeatability Findings
 
 The no-MTP graph API pilot produced coherent output and higher throughput,
 but C1 repetitions matched zero of eight response texts; C2 repetitions matched

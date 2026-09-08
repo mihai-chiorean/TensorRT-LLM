@@ -11,6 +11,57 @@ is claimed until measured. Keep spark-094a's working deployment unchanged.
 
 ## Current Checkpoint
 
+### Completed Follow-up: September 8, 00:10 UTC
+
+- Public FI non-atomic W4A16 wrapper qualification passed on SM121: 240 eager/
+  graph observations, zero candidate or control-health failures. Fifteen atomic
+  control repeat-tolerance observations remain visible (exit 1). Installed FI
+  and TRT sources unchanged; the reviewed three-file patch ran in a temporary
+  per-process overlay. No full-model determinism or speed claim follows.
+- Evidence: sibling `flashnext-results/nonatomic-public-20260907/`; executed
+  probe SHA `b89184f4a496fdc6b4de408246288669728f52552dccb2916bba20570da18f3f`.
+  Public-wrapper harness: 40 CPU tests; FI API patch: 44 CPU tests and pre-commit
+  pass. The None-valued input-scale digest harness issue was caught before GPU
+  launch and corrected. Isaac was restored healthy after component cleanup.
+- Fresh target-finalize controls completed, each with 40/40 valid token-ID
+  responses: OFF/default **24/24 exact pairs**, ON/default **0/24**, ON/finalize
+  disabled **24/24**. Same CUTLASS draft, B4/MTP3, graphs1..4, overlap OFF,
+  precision and request protocol; separate fresh workers/native caches. No FI
+  overlay or MTP non-atomic option in these target controls. Native OFF cache
+  was absent; separate FI warmup tuning remained enabled in all arms.
+- B cache selects target FINALIZE for decode buckets1/2/4/8/16; C records
+  finalize eligibility false and only NONE variants. This supports the
+  BF16 atomic-finalize explanation under these conditions, not sole causality,
+  universal determinism or a new upstream defect. The existing
+  `moe_config.disable_finalize_fusion` is sufficient for this bounded control.
+- Quality pass/fail/unscored: A C1 **5/2/1**, C4 **6/1/1**; B **6/1/1**,
+  **5/2/1**; C **5/2/1**, **6/1/1**. All coherent, with arithmetic/formatting
+  failures retained. No general accuracy-parity claim. A readiness correction,
+  differing realized quality lengths, FI tuning and idle histories are recorded.
+- Evidence: sibling `flashnext-results/20260907-finalize-controls-report.md`,
+  per-arm reports, all raw IDs, full logs/metrics/native caches, and
+  `20260907-finalize-cache-attribution-review.md`. Diagnostic elapsed times are
+  not performance benchmarks. Best prior full-model comparison remains TRT
+  **119.5087** versus vLLM **125.2630** aggregate tok/s with documented profile
+  differences. This batch establishes no new throughput number or speed keeper.
+- MTP-only non-atomic TRT adapter prepared separately in sibling worktree
+  `TensorRT-LLM-FlashNext-mtp-nonatomic`, branch
+  `experiment/flashnext-mtp-nonatomic`. Default off, qualified FI API required
+  only on opt-in; 56 isolated selector tests and touched-file hooks pass.
+  Uncommitted, undeployed; real post-load idempotence/shared-output regressions
+  were added after independent review. Native package collection is locally
+  dependency-blocked, so execution of those regressions remains pending.
+- All GPU tests stopped; final owned-process cleanup **00:04:13 UTC**,
+  remaining PIDs empty. Isaac restored **00:04:51**, verified healthy with
+  unchanged container/init/StartedAt; no streaming-client test. Tunnel18085
+  closed, no API grants remain, 094a untouched. Recovery state/helpers stay
+  under host `flashnext-finalize-controls-20260907`; never stop/recreate Isaac.
+- Next: finish native adapter/lifecycle qualification; compare patched FI
+  default True against explicit False on the MTP path with target-finalize
+  policy fixed; measure acceptance, quality and matched throughput. Separately
+  measure finalize-disabled cost and overlap on a qualified baseline. Keep M32
+  unchanged; do not combine unqualified changes or add component percentages.
+
 ### Completed Follow-up: September 7, 21:43 UTC
 
 - **M32 does not qualify as a performance keeper.** Three fresh tuned comparisons
