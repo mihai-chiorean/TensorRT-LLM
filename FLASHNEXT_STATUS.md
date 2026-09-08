@@ -11,6 +11,30 @@ is claimed until measured. Keep spark-094a's working deployment unchanged.
 
 ## Current Checkpoint
 
+### FI-Seeded Metrics Control: September 8, Completed
+
+- Acquired and independently audited 70 MXFP8 cache records (60 CUTLASS,
+  10 B12x), with valid metadata/digest and no fallback sentinels.
+- Fresh non-atomic MTP candidate, metrics OFF and ON, no preceding requests:
+  **40/40 valid responses and 24/24 exact sentinel pairs in each arm**.
+  Cross-arm sentinels 32/32 and short turnover 4/4 match; long C4 turnover 0/4
+  matches. Preserve that cross-arm long-C4 divergence, not a global stability claim.
+- Both initialization FI/native files are byte-identical to seeds; no new FI
+  profiling records at export. These are not post-probe in-memory snapshots.
+  Metrics are not necessary for this pass; earlier history failures remain open.
+- Both workers cleaned up with no remaining PIDs. Final cleanup 05:59:59 UTC;
+  Isaac restored 06:00:45, independently healthy 06:01:19. Tunnel 18086 closed.
+  Minimum guarded available memory 29.48/29.34 GiB, original limits retained.
+  Same original 40-request protocol, no extra warm requests, observer OFF.
+- Research scope fix `a4345e6c` is deployed only in the separate diagnostic
+  runtime. Optional observer `4ae7269c` is committed/pushed but not deployed.
+  98 combined CPU tests, independent reviews and all commit hooks pass.
+- [Current report](scripts/flashnext/FI_SEEDED_METRICS_RESULTS.md).
+  No speed keeper, upstream PR or baseline promotion from these diagnostics.
+- Next: matched metrics-OFF speed/semantic-quality A/B using these seeds and
+  fixed histories; concurrent-output divergence needs matched prefix/shape
+  evidence before any kernel or state-correctness claim.
+
 ### Completed Diagnostic: September 8, 04:15 UTC
 
 - **MTP acceptance measured, no new speed keeper.** Single CSV sentinel,

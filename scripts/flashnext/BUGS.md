@@ -7,6 +7,26 @@ Baseline: TensorRT-LLM `70feda63959fedf0f5f12c5e8c771e5392ce2d25`.
 Checkpoint: `925d7be6c14c6c9442ef83e8f05b5a3c39304f69`.
 No new NVIDIA issues or PRs have been opened for this experiment.
 
+## Research Harness: Composite Checkpoint Scope
+
+September 8, 2026: the first live FI-cache acquisition failed before model
+construction with `ValueError: FI research cache requires a flattened
+Qwen4Exp text checkpoint`. The diagnostic helper inspected raw `config.json`,
+whereas the existing runtime flattens the nested text config when
+`language_model_only` is literally true. The text-only view intentionally
+retains the original conditional-generation architecture and vision config.
+
+Research commit `a4345e6c` accepts only the two supported composite
+model-type/architecture pairs with explicit text-only mode and a nonempty
+text-config dictionary. Vision-enabled, malformed and mismatched cases stay
+rejected. All 67 isolated CPU tests pass locally and in the Spark container;
+independent review and commit hooks pass. This corrects our diagnostic,
+not an upstream model bug or a performance improvement. Failed-run cleanup
+reported no remaining owned PIDs; independent checks confirmed Isaac restored
+with unchanged identity and healthy at 05:20:28 UTC. A separately named retry
+exported 70 FI records and reached HTTP 200 readiness at 05:34 UTC; see
+`FI_SEEDED_METRICS_RESULTS.md` for acquisition and subsequent controls.
+
 ## Latest Integration Evidence
 
 The entries below retain historical discovery-stage test counts. As of
