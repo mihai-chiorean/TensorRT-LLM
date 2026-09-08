@@ -334,3 +334,25 @@ These are experimental implementation mistakes, not claims about upstream.
   and `nonatomic-timing-attempt1-summary.json`. Timing source SHA:
   `c7a3644712fb12be8470a461be20d7ae2f8e4a5c3288561182e0b1865c858782`.
   Guard cleanup at 16:32:49 UTC left no owned processes.
+
+### Full-Model Non-Atomic Follow-Up, September 8
+
+- The public FI wrapper and default-off TRT adapter now pass component/native
+  CPU qualification, but do not qualify as a full-model repeatability fix.
+  B8/MTP3 with fixed native target tactics and finalize fusion disabled gives
+  True21/24 exact repeated token sequences versus False0/24, both40/40 valid
+  responses. The False log confirms MTP layer48 received the option.
+- This is an unresolved experiment result, not a localized upstream defect.
+  FI dense tactics are not frozen. Inspect actual production routing dtype,
+  graph/state lifetime, and dispatched kernels before assigning causality to
+  reduction order. Component tolerance/bit-exact repeats alone are insufficient.
+- Small quality checks stay coherent; False has more exact final answers in
+  this sample, not a demonstrated general accuracy benefit. No speed keeper:
+  C4 difference is below variation, C8 first round is slower, second missing.
+- Harness-only bug fixed: documented scorer exit3 (manual-only unscored)
+  was incorrectly rejected by the stage wrapper. Saved quality records were
+  validated without rerunning requests; original exit1 terminal retained.
+- Acceptance counters were not enabled. Empty `/metrics` is iteration JSON,
+  not zero accepted drafts. Separate instrumented comparison is planned.
+- See [full results](MTP_NONATOMIC_RESULTS.md). Candidate remains default-off
+  in isolated research branch; no upstream fix or baseline change is claimed.

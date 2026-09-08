@@ -11,6 +11,46 @@ is claimed until measured. Keep spark-094a's working deployment unchanged.
 
 ## Current Checkpoint
 
+### Completed Follow-up: September 8, 01:13 UTC
+
+- **No new speed or stability keeper.** MTP-only non-atomic option runs in the
+  actual model, but repeated token-ID pairs are True21/24 exact versus
+  False0/24; both return40/40 valid responses. Component repeatability did not
+  carry through to this full-model experiment. Cause remains unresolved.
+- True C8 rounds **120.7901/123.7546 aggregate tok/s**, pooled **122.2543**.
+  False C8 round1 **117.2655**; round2 not admitted within the lease budget.
+  C4 pooled True71.5587 versus False72.4556 (+1.25%) is much smaller than
+  within-arm variation. No fresh vLLM comparison or candidate speed promotion.
+- Quality pass/fail/unscored: True C1=5/2/1, C8=6/1/1; False C1=6/1/1,
+  C8=7/0/1. All coherent with normal termination. Coding cases reviewed but
+  never executed; small-sample improvements are not general accuracy evidence.
+- Native88-test gate and all four touched-file hooks pass. Explicit patched
+  FI capability succeeds; stock FI rejects opt-in. Adapter checkpoint
+  `1a98b99c` lives on isolated `experiment/flashnext-mtp-nonatomic`, default
+  OFF, not integrated into the baseline. FI patch preserved in a hash-verified
+  source archive; installed package and previous runtime remain unchanged.
+- Same target-finalize-disabled/global-tuning-ON B8/MTP3/graphs1..8 profile,
+  overlap OFF, BF16 KV/FP32 recurrent state, identical initial native caches.
+  All three native caches exactly match the seed, including20 target tactics.
+  Source predicts int32 routes matching the component fixture; no dtype
+  mismatch is demonstrated. FI dense selections remain unfrozen. Acceptance unavailable with current
+  instrumentation; separate source-reviewed diagnostic plan prepared.
+- Preserve initial cold True quality-only attempt and missing False C8r2.
+  Client scorer exit3 was mishandled as failure when only manual scoring
+  remained: fixed/reviewed wrapper, original failed terminal retained, all16
+  saved responses independently checked, no requests rerun or discarded.
+- All GPU work ended: final cleanup01:10:50 UTC, no owned PIDs. Isaac restored
+  01:11:32, independently healthy/unpaused with unchanged identity01:12:56;
+  only Isaac uses GPU, host available114.72GiB. Tunnel18086 closed. All three
+  completed pause intents archived; recovery units inactive. 094a untouched.
+- [Full report](scripts/flashnext/MTP_NONATOMIC_RESULTS.md), sibling raw
+  `flashnext-results/20260908-mtp-*` reports, complete logs/caches, FI snapshot,
+  and pause archive preserve provenance. MIT-923/MIT-912 remain open.
+- Next: bounded C1 CSV-sentinel acceptance/first-divergence diagnostic with
+  controlled FI tactics and matched prefixes; no broad sweep. Then measure
+  overlap and finalize cost on a qualified baseline before another vLLM pair.
+  Keep M32 unchanged; no upstream PR for this candidate yet.
+
 ### Completed Follow-up: September 8, 00:10 UTC
 
 - Public FI non-atomic W4A16 wrapper qualification passed on SM121: 240 eager/
