@@ -420,7 +420,9 @@ def _creator_nodes() -> tuple[list[ast.stmt], int, int, int]:
     save = next(
         i
         for i, node in enumerate(body)
-        if isinstance(node, ast.If) and ast.unparse(node.test) == "fi_cache_session is not None"
+        if isinstance(node, ast.If)
+        and ast.unparse(node.test) == "fi_cache_session is not None"
+        and "fi_cache_session.save()" in ast.unparse(node)
     )
     start = next(
         i

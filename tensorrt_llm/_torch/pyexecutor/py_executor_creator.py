@@ -561,7 +561,8 @@ def create_py_executor(
 
     fi_cache_session = None
     if ("TRTLLM_FLASHNEXT_FI_CACHE_LOAD" in os.environ
-            or "TRTLLM_FLASHNEXT_FI_CACHE_SAVE" in os.environ):
+            or "TRTLLM_FLASHNEXT_FI_CACHE_SAVE" in os.environ
+            or "TRTLLM_FLASHNEXT_FI_MXFP8_OBSERVE" in os.environ):
         from ._fi_cache_research import begin_fi_cache_research
         fi_cache_session = begin_fi_cache_research(llm_args, mapping,
                                                    checkpoint_dir, logger.info)
@@ -959,6 +960,11 @@ def create_py_executor(
                                    spec_resource_manager=spec_resource_manager,
                                    guided_decoder=guided_decoder)
 
+    if fi_cache_session is not None:
+        fi_cache_session.set_phase(
+            "profiling_initialization"
+            if estimating_kv_cache else "serving_initialization")
+
     with allocation_scope(
             ExecutorMemoryType.INIT_EXTRA_RESOURCES
             if estimating_kv_cache else ExecutorMemoryType.EXTRA_RESOURCES):
@@ -1029,6 +1035,9 @@ def create_py_executor(
             # the original value before creating the final KV cache.
             kv_cache_creator._max_seq_len = model_engine_max_seq_len
             kv_cache_creator.build_managers(resources, False)
+
+        if fi_cache_session is not None:
+            fi_cache_session.set_phase("serving_initialization")
 
         with allocation_scope(ExecutorMemoryType.EXTRA_RESOURCES):
 

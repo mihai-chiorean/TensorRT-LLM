@@ -20,8 +20,11 @@ if TYPE_CHECKING:
     from tensorrt_llm.llmapi.llm_args import TorchLlmArgs
     from tensorrt_llm.mapping import Mapping
 
+    from ._fi_mxfp8_observer import Mxfp8Observer
+
 _LOAD = "TRTLLM_FLASHNEXT_FI_CACHE_LOAD"
 _SAVE = "TRTLLM_FLASHNEXT_FI_CACHE_SAVE"
+_OBSERVE = "TRTLLM_FLASHNEXT_FI_MXFP8_OBSERVE"
 _ENTRY_LOCK = threading.Lock()
 _STARTED = False
 
@@ -108,6 +111,11 @@ class FICacheResearchSession:
         self._device = device
         self._log = log
         self._saved = False
+        self.observer: Mxfp8Observer | None = None
+
+    def set_phase(self, phase: str) -> None:
+        if self.observer is not None:
+            self.observer.set_phase(phase)
 
     def save(self) -> None:
         import torch
@@ -134,6 +142,7 @@ class FICacheResearchSession:
             f"profiling_records={len(self._tuner.profiling_cache)}; "
             "persistence only, exercised-key equality unverified"
         )
+        self.set_phase("serving")
 
 
 def begin_fi_cache_research(
@@ -201,4 +210,20 @@ def begin_fi_cache_research(
         f"mode={mode} seed={source} sha256={source_sha} "
         f"loaded_records={len(tuner._file_configs)} output={output}"
     )
-    return FICacheResearchSession(tuner, output, source, source_sha, device, log)
+    session = FICacheResearchSession(tuner, output, source, source_sha, device, log)
+    if _OBSERVE in os.environ:
+        from ._fi_mxfp8_observer import Mxfp8Observer
+
+        observer_name = os.environ[_OBSERVE]
+        if not observer_name:
+            raise ValueError("FI MXFP8 observer requires a nonempty unique JSONL path")
+        observer_path = Path(observer_name).absolute()
+        if observer_path.resolve() in {
+            output.resolve(),
+            source.resolve() if source is not None else None,
+        }:
+            raise ValueError("FI MXFP8 observer output must differ from cache paths")
+        seed = _read_cache(source)[0] if source is not None else {}
+        session.observer = Mxfp8Observer(tuner, observer_path, seed, source_sha, device)
+        log(f"FI MXFP8 observer enabled path={observer_path}; diagnostic, not timing")
+    return session
