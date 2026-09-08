@@ -11,6 +11,52 @@ is claimed until measured. Keep spark-094a's working deployment unchanged.
 
 ## Current Checkpoint
 
+### C8 Confirmation V2: September 8, Completed
+
+- User authorized execution. Order: True/False/False/True, four fresh workers.
+  Each gets fixed32x128 C8 warmup, two fixed32x128 timed C8 rounds, then eight
+  normal-EOS quality requests. No pooling with the previous campaign.
+- First order pair completed: s01 True110.2445/121.9570 tok/s, pooled115.8053;
+  s02 False114.6162/127.5192, pooled120.7239 (+4.25%). Both small quality
+  suites score6/1/1.
+- s03 False completed115.4769/123.5628 tok/s, but its small quality suite
+  scored5/2/1 (additional code-trace failure). Do not assume quality parity.
+  s04 True completed114.7426/121.6764, pooled118.1078, quality6/1/1.
+  Reversed pair: False119.3831 versus True118.1078, +1.08%. No promotion:
+  magnitude varies and quality/text variation remains. All384 fixed responses
+  and32 quality responses completed; every round retained.
+- All four workers cleaned up with no remaining owned PIDs. Final cleanup
+  23:17:34 UTC; Isaac restored23:18:20, fresh healthy23:18:50. Existing
+  guards1000s/recovery1200s and frozen hashes unchanged. See
+  [full report](scripts/flashnext/TC_CONFIRMATION_V2_RESULTS.md).
+- Local artifacts: sibling `flashnext-results/20260908-tc-confirmation-v2-*`.
+  Server artifacts: `/tmp/flashnext-tc-confirmation-v2-*` in the TRT container.
+  Fresh independent host preflight and151 existing CPU checks pass. Parent
+  owns all cleanup and restoration; Spark094a remains unchanged.
+- Banach completed the vLLM source audit: N96 caching, overlap, packed PLE,
+  GDN output-norm fusion and MTP-only Marlin are leads, not measured gains.
+  Current-runtime trace preparation is separate from the timed workers.
+  Diagnostic launcher/supervisor independently reviewed;39 CPU tests pass.
+
+### Current-Runtime Trace V2: September 8, Failed Capture
+
+- Unchanged True arm with the same source/config/seeds; Nsight CUDA software,
+  graph-node and MPI tracing, CPU sampling/hardware metrics OFF. Requested
+  iterations0..39 and eight first-use C8 fixed256 raw-ID requests.
+- All eight requests exceeded the immutable23:26:43 UTC deadline. No finished
+  report was exported. Preserve the9.5MiB partial stream; no hotspot attribution
+  or throughput conclusion follows from this failed capture.
+- The90s profile-start supervisor returned124 and the original guard cleaned
+  all descendants at23:26:45. Isaac restored23:27:33, fresh healthy23:28:03.
+  No OOM, limit extension or service recreation. Spark094a untouched.
+- Raw client errors and server/partial-stream archive are in sibling results,
+  `tracev2-true-20260908-client/` and `tracev2-true-server-20260908.tar`.
+  CPU-only forensic review pending; do not blame the post-cleanup Nsight EOF
+  warning for the earlier timeout without additional evidence.
+- MTP1 preparation found our private cache helper only permits draft3.
+  A separate research-only1/3 allowance passes72 focused CPU tests and is
+  under independent review. No changed runtime has been deployed.
+
 ### Next Experiments: September 8, Preparation
 
 - C8 confirmation proposal prepared and independently reviewed: fixed-length
