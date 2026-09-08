@@ -11,6 +11,36 @@ is claimed until measured. Keep spark-094a's working deployment unchanged.
 
 ## Current Checkpoint
 
+### Seeded TC-Decode Performance A/B: September 8, Completed
+
+- User authorized metrics-OFF TC-decode True versus False measurements.
+  Same frozen FI/native seeds, runtime and B8/MTP3 profile; observer OFF.
+- Four fresh bounded sessions completed: True-low, False-low, False-batch,
+  True-batch. Low: quality C1 then two 32-prompt fixed128 C1 rounds. Batch:
+  quality C8 then C4r1/C8r1/C4r2/C8r2. No extra generation warmup or ID probe.
+- Pooled True/False output tok/s: C1 **31.8926/31.4513 (-1.38%)**,
+  C4 **66.5235/67.6504 (+1.69%)**, C8 **113.9839/117.9815 (+3.51%)**.
+  All384 fixed128 responses valid, plus32 normal-EOS quality responses.
+  Both arms score5/2/1 at C1 and6/1/1 at C8; failures remain visible.
+- **Batching lead, not a keeper yet.** Large first/repeat history effects and
+  only one worker per arm/block require reverse-order confirmation. Pre-timing
+  C8 quality generated817/1477 tokens (True/False), a warmup confound. C1 loss
+  is mainly TTFT, not uniformly slower post-first-text timing. No default
+  change, upstream PR or fresh vLLM comparison from this batch.
+- Final guard cleanup14:55:30 UTC, Isaac restored14:56:20 and fresh healthy
+  check14:56:50, unchanged identity and only Isaac on GPU. Tunnel18086 closed.
+  All four owned worker trees cleaned up. Independent1200s recovery and1000s
+  guards unchanged; no OOM or limit events. Spark094a untouched.
+- Client/scorer/summary CPU tests: 123 passed; pause helper: 22 passed;
+  lease watchdog: six passed. Independent launcher/client reviews completed.
+  Runtime audit: 1518 tracked Python files and three FI patch hashes match.
+- Evidence/protocol: sibling `flashnext-results/20260908-mtp-tc-decode-*`;
+  [full report](scripts/flashnext/TC_SEEDED_PERFORMANCE_RESULTS.md).
+  Next: fixed-length warmup, quality after timing, reversed arm orders in a
+  separately registered batch confirmation; then qualified vLLM reference.
+  Separate lead: trace repeated PLE accesses/clock effects behind the warmup
+  trend. No cache-mechanism claim yet. MIT-923/MIT-912 remain open.
+
 ### FI-Seeded Metrics Control: September 8, Completed
 
 - Acquired and independently audited 70 MXFP8 cache records (60 CUTLASS,
