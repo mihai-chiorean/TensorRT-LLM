@@ -3802,6 +3802,14 @@ class NVFP4CuteDslB12xFusedMoEMethod(NVFP4CutlassFusedMoEMethod):
         # NVFP4 weight tensors are padded for kernel alignment. FlashInfer's
         # CUDA-graph workspace must match the stored tensors.
         b12x_intermediate_size = w2_in_dim
+        wrapper_kwargs = {}
+        nonatomic_enabled = getattr(module, "_b12x_enable_w4a16_tc_decode",
+                                    None) is False
+        if nonatomic_enabled:
+            if not is_w4a16_nvfp4:
+                raise RuntimeError(
+                    "MTP-only non-atomic B12x requires W4A16_NVFP4")
+            wrapper_kwargs["enable_w4a16_tc_decode"] = False
 
         module.b12x_wrapper = B12xMoEWrapper(
             num_experts=module.num_experts,
@@ -3812,7 +3820,14 @@ class NVFP4CuteDslB12xFusedMoEMethod(NVFP4CutlassFusedMoEMethod):
             max_num_tokens=module.moe_max_num_tokens,
             activation=self._ACTIVATION_MAP[module.activation_type],
             quant_mode="w4a16" if is_w4a16_nvfp4 else "nvfp4",
+            **wrapper_kwargs,
         )
+        if nonatomic_enabled and getattr(module.b12x_wrapper,
+                                         "enable_w4a16_tc_decode",
+                                         None) is not False:
+            raise RuntimeError(
+                "MTP-only non-atomic B12x FlashInfer wrapper did not retain "
+                "enable_w4a16_tc_decode=False")
 
         # Replace the wrapper's per-instance output buffer with a shared one.
         # Layers run sequentially on a single stream, so a single buffer of the
@@ -3839,6 +3854,13 @@ class NVFP4CuteDslB12xFusedMoEMethod(NVFP4CutlassFusedMoEMethod):
             f"quant_mode={'w4a16' if is_w4a16_nvfp4 else 'nvfp4'}.",
             key="cute_dsl_b12x_moe_active",
         )
+        if nonatomic_enabled:
+            logger.info_once(
+                "MTP-only non-atomic B12x active: "
+                f"layer={getattr(module, 'layer_idx', 'unknown')}, "
+                "enable_w4a16_tc_decode=False.",
+                key="qwen4_exp_mtp_b12x_nonatomic_active",
+            )
 
 
 class NVFP4MegaMoECuteDslMethod(NVFP4FusedMoEMethod):

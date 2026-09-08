@@ -22,8 +22,10 @@ from unittest.mock import patch
 import pytest
 import torch
 
+from tensorrt_llm._torch.moe.fused_moe import fused_moe_cute_dsl_b12x
 from tensorrt_llm._torch.moe.fused_moe.fused_moe_cute_dsl_b12x import CuteDslB12xFusedMoE
 from tensorrt_llm._torch.moe.fused_moe.fused_moe_cutlass import CutlassFusedMoE
+from tensorrt_llm._torch.moe.fused_moe.impl_blocks import MoEWeightOwnerMixin
 from tensorrt_llm._torch.moe.fused_moe.impl_contract import (
     MoEDeployment,
     MoEEnvironment,
@@ -215,28 +217,9 @@ def test_w4a16_nvfp4_prefill_quantize_input_stays_on_b12x():
     assert out_sf is None
 
 
-def test_w4a16_nvfp4_post_load_uses_modelopt_scale_contract(monkeypatch):
+def _w4a16_nvfp4_module() -> tuple[torch.nn.Module, torch.Tensor, torch.Tensor]:
     class _RoutingMethod:
         experts_per_token = 4
-
-    class _FakeB12xWrapper:
-        calls = []
-
-        def __init__(self, **kwargs):
-            self._moe_output = None
-            self.calls.append(kwargs)
-
-    def _convert_sf_to_mma_layout(scales, *, m, k, num_groups):
-        return scales
-
-    flashinfer = types.ModuleType("flashinfer")
-    flashinfer.B12xMoEWrapper = _FakeB12xWrapper
-    cute_dsl = types.ModuleType("flashinfer.cute_dsl")
-    utils = types.ModuleType("flashinfer.cute_dsl.utils")
-    utils.convert_sf_to_mma_layout = _convert_sf_to_mma_layout
-    monkeypatch.setitem(sys.modules, "flashinfer", flashinfer)
-    monkeypatch.setitem(sys.modules, "flashinfer.cute_dsl", cute_dsl)
-    monkeypatch.setitem(sys.modules, "flashinfer.cute_dsl.utils", utils)
 
     num_experts = 2
     hidden_size = 128
@@ -280,14 +263,36 @@ def test_w4a16_nvfp4_post_load_uses_modelopt_scale_contract(monkeypatch):
     module.fc2_alpha = torch.tensor([0.125, 0.25], dtype=torch.float32)
     module.fc31_input_scale = torch.tensor(2.0, dtype=torch.float32)
     module.fc2_input_scale = torch.tensor(4.0, dtype=torch.float32)
+    return module, w3_w1_weight_scale, w2_weight_scale
 
+
+def _install_b12x_wrapper(monkeypatch: pytest.MonkeyPatch, wrapper: type) -> None:
+    def _convert_sf_to_mma_layout(
+        scales: torch.Tensor, *, m: int, k: int, num_groups: int
+    ) -> torch.Tensor:
+        del m, k, num_groups
+        return scales
+
+    flashinfer = types.ModuleType("flashinfer")
+    flashinfer.B12xMoEWrapper = wrapper
+    cute_dsl = types.ModuleType("flashinfer.cute_dsl")
+    utils = types.ModuleType("flashinfer.cute_dsl.utils")
+    utils.convert_sf_to_mma_layout = _convert_sf_to_mma_layout
+    monkeypatch.setitem(sys.modules, "flashinfer", flashinfer)
+    monkeypatch.setitem(sys.modules, "flashinfer.cute_dsl", cute_dsl)
+    monkeypatch.setitem(sys.modules, "flashinfer.cute_dsl.utils", utils)
+
+
+def _transform_b12x_weights(module: torch.nn.Module) -> None:
     with patch.object(NVFP4CutlassFusedMoEMethod, "transform_weights", return_value=None):
         NVFP4CuteDslB12xFusedMoEMethod().transform_weights(module)
 
-    assert _FakeB12xWrapper.calls
-    wrapper_kwargs = _FakeB12xWrapper.calls[0]
-    assert wrapper_kwargs.get("quant_mode") == "w4a16", wrapper_kwargs
-    assert wrapper_kwargs["intermediate_size"] == padded_intermediate_size
+
+def _assert_w4a16_scale_contract(
+    module: torch.nn.Module,
+    w3_w1_weight_scale: torch.Tensor,
+    w2_weight_scale: torch.Tensor,
+) -> None:
     assert module._b12x_weights["fc2_input_scale"] is None
     assert torch.equal(
         module._b12x_weights["w1_weight_sf"].float(),
@@ -305,6 +310,155 @@ def test_w4a16_nvfp4_post_load_uses_modelopt_scale_contract(monkeypatch):
         module._b12x_weights["w2_alpha"],
         torch.tensor([0.5, 1.0], dtype=torch.float32),
     )
+
+
+def test_w4a16_nvfp4_post_load_default_preserves_scale_contract_and_omits_option(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _OldWrapper:
+        calls = []
+
+        def __init__(self, **kwargs: object) -> None:
+            self._moe_output = None
+            self.calls.append(kwargs)
+
+    _install_b12x_wrapper(monkeypatch, _OldWrapper)
+    module, w3_w1_weight_scale, w2_weight_scale = _w4a16_nvfp4_module()
+    _transform_b12x_weights(module)
+    assert _OldWrapper.calls
+    wrapper_kwargs = _OldWrapper.calls[0]
+    assert "enable_w4a16_tc_decode" not in wrapper_kwargs
+    assert wrapper_kwargs["quant_mode"] == "w4a16"
+    assert wrapper_kwargs["intermediate_size"] == 1920
+    _assert_w4a16_scale_contract(module, w3_w1_weight_scale, w2_weight_scale)
+
+
+def test_w4a16_nvfp4_post_load_keeps_capable_wrapper_default_true(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _TrueWrapper:
+        calls = []
+
+        def __init__(self, *, enable_w4a16_tc_decode: bool = True, **kwargs: object) -> None:
+            self._moe_output = None
+            self.enable_w4a16_tc_decode = enable_w4a16_tc_decode
+            self.calls.append((enable_w4a16_tc_decode, kwargs))
+
+    _install_b12x_wrapper(monkeypatch, _TrueWrapper)
+    module, w3_w1_weight_scale, w2_weight_scale = _w4a16_nvfp4_module()
+    _transform_b12x_weights(module)
+    assert _TrueWrapper.calls[0][0] is True
+    assert "enable_w4a16_tc_decode" not in _TrueWrapper.calls[0][1]
+    _assert_w4a16_scale_contract(module, w3_w1_weight_scale, w2_weight_scale)
+
+
+def test_w4a16_nvfp4_post_load_nonatomic_forwards_false_and_preserves_scale_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FalseWrapper:
+        calls = []
+
+        def __init__(self, *, enable_w4a16_tc_decode: bool = True, **kwargs: object) -> None:
+            self._moe_output = None
+            self.enable_w4a16_tc_decode = enable_w4a16_tc_decode
+            self.calls.append((enable_w4a16_tc_decode, kwargs))
+
+    _install_b12x_wrapper(monkeypatch, _FalseWrapper)
+    module, w3_w1_weight_scale, w2_weight_scale = _w4a16_nvfp4_module()
+    module._b12x_enable_w4a16_tc_decode = False
+    _transform_b12x_weights(module)
+    assert _FalseWrapper.calls[0][0] is False
+    assert _FalseWrapper.calls[0][1]["quant_mode"] == "w4a16"
+    _assert_w4a16_scale_contract(module, w3_w1_weight_scale, w2_weight_scale)
+
+
+def test_w4a16_nvfp4_post_load_rejects_wrapper_that_ignores_nonatomic_option(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _IgnoringWrapper:
+        def __init__(self, *, enable_w4a16_tc_decode: bool = True, **kwargs: object) -> None:
+            self._moe_output = None
+            self.enable_w4a16_tc_decode = True
+
+    _install_b12x_wrapper(monkeypatch, _IgnoringWrapper)
+    module, _, _ = _w4a16_nvfp4_module()
+    module._b12x_enable_w4a16_tc_decode = False
+    with pytest.raises(RuntimeError, match="did not retain"):
+        _transform_b12x_weights(module)
+
+
+def test_b12x_nonatomic_rejects_non_w4a16_quantization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FalseWrapper:
+        def __init__(self, *, enable_w4a16_tc_decode: bool = True, **kwargs: object) -> None:
+            self._moe_output = None
+            self.enable_w4a16_tc_decode = enable_w4a16_tc_decode
+
+    _install_b12x_wrapper(monkeypatch, _FalseWrapper)
+    module, _, _ = _w4a16_nvfp4_module()
+    module._b12x_enable_w4a16_tc_decode = False
+    module.quant_config = QuantConfig(quant_algo=QuantAlgo.NVFP4)
+    with pytest.raises(RuntimeError, match="requires W4A16_NVFP4"):
+        _transform_b12x_weights(module)
+
+
+def test_nonatomic_post_load_is_idempotent_and_reuses_shared_cpu_output_pool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _CpuOutputWrapper:
+        calls: list["_CpuOutputWrapper"] = []
+
+        def __init__(self, *, enable_w4a16_tc_decode: bool = True, **kwargs: object) -> None:
+            del kwargs
+            self._moe_output = torch.empty((8, 128), dtype=torch.float32)
+            self.enable_w4a16_tc_decode = enable_w4a16_tc_decode
+            self.calls.append(self)
+
+    class _LifecycleOwner(MoEWeightOwnerMixin, torch.nn.Module):
+        def __init__(self) -> None:
+            torch.nn.Module.__init__(self)
+
+        def _get_quant_method(self) -> object:
+            raise AssertionError("post-load lifecycle test installs its concrete quant method")
+
+    def owner() -> tuple[_LifecycleOwner, torch.Tensor, torch.Tensor]:
+        source, w1_scale, w2_scale = _w4a16_nvfp4_module()
+        result = _LifecycleOwner()
+        result.__dict__.update(source.__dict__)
+        result._weights_created = True
+        result._b12x_enable_w4a16_tc_decode = False
+        result.quant_method = NVFP4CuteDslB12xFusedMoEMethod()
+        return result, w1_scale, w2_scale
+
+    _install_b12x_wrapper(monkeypatch, _CpuOutputWrapper)
+    monkeypatch.setattr(fused_moe_cute_dsl_b12x, "_SHARED_MOE_OUTPUT_BUF", {})
+    first, first_w1_scale, first_w2_scale = owner()
+    with (
+        patch.object(NVFP4CutlassFusedMoEMethod, "transform_weights", return_value=None),
+        patch.object(NVFP4CuteDslB12xFusedMoEMethod, "cache_derived_state", return_value=None),
+    ):
+        first.post_load_weights()
+        wrapper = first.b12x_wrapper
+        output = wrapper._moe_output
+        prepared_w1_scale = first._b12x_weights["w1_weight_sf"].clone()
+        prepared_w2_scale = first._b12x_weights["w2_weight_sf"].clone()
+        monkeypatch.setenv("TRTLLM_QWEN4_MTP_B12X_NONATOMIC", "0")
+        first.post_load_weights()
+
+        second, second_w1_scale, second_w2_scale = owner()
+        second.post_load_weights()
+
+    assert len(_CpuOutputWrapper.calls) == 2
+    assert first.b12x_wrapper is wrapper
+    assert first.b12x_wrapper._moe_output is output
+    assert first.b12x_wrapper.enable_w4a16_tc_decode is False
+    assert second.b12x_wrapper.enable_w4a16_tc_decode is False
+    assert second.b12x_wrapper._moe_output is output
+    assert torch.equal(first._b12x_weights["w1_weight_sf"], prepared_w1_scale)
+    assert torch.equal(first._b12x_weights["w2_weight_sf"], prepared_w2_scale)
+    _assert_w4a16_scale_contract(first, first_w1_scale, first_w2_scale)
+    _assert_w4a16_scale_contract(second, second_w1_scale, second_w2_scale)
 
 
 def test_dispatch_rejects_non_tensor():

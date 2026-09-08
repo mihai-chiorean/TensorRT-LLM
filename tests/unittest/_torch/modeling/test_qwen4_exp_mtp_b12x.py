@@ -3,10 +3,13 @@
 """CPU-isolated MTP selector/constructor tests, not native kernel qualification."""
 
 import ast
+import builtins
 import copy
 import fnmatch
+import inspect
 import os
 import sys
+from functools import wraps
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock
@@ -17,6 +20,7 @@ from torch import nn
 
 _ROOT = Path(__file__).resolve().parents[4]
 _ENV = "TRTLLM_QWEN4_MTP_B12X"
+_NONATOMIC_ENV = "TRTLLM_QWEN4_MTP_B12X_NONATOMIC"
 
 
 class _QuantPolicy(SimpleNamespace):
@@ -58,7 +62,11 @@ def _config() -> SimpleNamespace:
 def model_source(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     path = _ROOT / "tensorrt_llm/_torch/models/modeling_qwen4_exp.py"
     tree = ast.parse(path.read_text())
-    functions = {"_qwen4_exp_mtp_b12x_config", "Qwen4ExpMTP"}
+    functions = {
+        "_qwen4_exp_mtp_b12x_config",
+        "_qwen4_exp_mtp_b12x_nonatomic_enabled",
+        "Qwen4ExpMTP",
+    }
     nodes = [
         n
         for n in tree.body
@@ -102,6 +110,7 @@ def model_source(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
 
     module.__dict__.update(
         copy=copy,
+        inspect=inspect,
         os=os,
         torch=torch,
         QuantAlgo=SimpleNamespace(W4A16_NVFP4="W4A16_NVFP4"),
@@ -128,7 +137,17 @@ def model_source(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     monkeypatch.setattr(torch.cuda, "get_device_capability", lambda: (12, 1))
     monkeypatch.setattr(torch.cuda, "Event", Mock(return_value=object()))
     monkeypatch.delenv(_ENV, raising=False)
+    monkeypatch.delenv(_NONATOMIC_ENV, raising=False)
     return module
+
+
+def _install_flashinfer_capability(
+    monkeypatch: pytest.MonkeyPatch, wrapper: type, version: str = "0.6.18"
+) -> None:
+    flashinfer = ModuleType("flashinfer")
+    flashinfer.__version__ = version
+    flashinfer.B12xMoEWrapper = wrapper
+    monkeypatch.setitem(sys.modules, "flashinfer", flashinfer)
 
 
 @pytest.mark.parametrize("selector", [None, "0"])
@@ -137,6 +156,14 @@ def test_default_is_identity_without_device_query(
 ) -> None:
     if selector is not None:
         monkeypatch.setenv(_ENV, selector)
+    import_module = builtins.__import__
+
+    def reject_flashinfer(name: str, *args: object, **kwargs: object) -> object:
+        if name == "flashinfer":
+            raise AssertionError("default MTP construction must not import FlashInfer")
+        return import_module(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", reject_flashinfer)
     monkeypatch.setattr(torch.cuda, "is_available", Mock(side_effect=AssertionError))
     config = _config()
     assert model_source._qwen4_exp_mtp_b12x_config(config, 48) is config
@@ -351,3 +378,128 @@ def test_real_model_config_freeze_method_preserved(
     for item in (config, copied):
         with pytest.raises(AttributeError, match="instance is frozen"):
             item.moe_max_num_tokens = 4
+
+
+@pytest.mark.parametrize("selector", ["", "true", "2"])
+def test_nonatomic_selector_requires_zero_or_one(
+    model_source: ModuleType, monkeypatch: pytest.MonkeyPatch, selector: str
+) -> None:
+    monkeypatch.setenv(_NONATOMIC_ENV, selector)
+    with pytest.raises(ValueError, match="NONATOMIC must be 0 or 1"):
+        model_source.Qwen4ExpMTP(_config(), 48, {"attention": None, "shared": None})
+    assert not model_source.constructed_configs
+
+
+def test_nonatomic_requires_mtp_b12x_selector_before_layer_construction(
+    model_source: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(_NONATOMIC_ENV, "1")
+    with pytest.raises(ValueError, match="requires TRTLLM_QWEN4_MTP_B12X=1"):
+        model_source.Qwen4ExpMTP(_config(), 48, {"attention": None, "shared": None})
+    assert not model_source.constructed_configs
+
+
+def test_nonatomic_rejects_missing_flashinfer_before_layer_construction(
+    model_source: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(_ENV, "1")
+    monkeypatch.setenv(_NONATOMIC_ENV, "1")
+    monkeypatch.delitem(sys.modules, "flashinfer", raising=False)
+    import_module = builtins.__import__
+
+    def reject_flashinfer(name: str, *args: object, **kwargs: object) -> object:
+        if name == "flashinfer":
+            raise ImportError("test-only missing flashinfer")
+        return import_module(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", reject_flashinfer)
+    with pytest.raises(RuntimeError, match="requires the reviewed FlashInfer capability"):
+        model_source.Qwen4ExpMTP(_config(), 48, {"attention": None, "shared": None})
+    assert not model_source.constructed_configs
+
+
+@pytest.mark.parametrize("version", ["0.6.17", "0.6.19", "unknown"])
+def test_nonatomic_rejects_unqualified_flashinfer_version(
+    model_source: ModuleType, monkeypatch: pytest.MonkeyPatch, version: str
+) -> None:
+    class SupportedWrapper:
+        def __init__(self, *, enable_w4a16_tc_decode: bool = True) -> None:
+            self.enable_w4a16_tc_decode = enable_w4a16_tc_decode
+
+    monkeypatch.setenv(_ENV, "1")
+    monkeypatch.setenv(_NONATOMIC_ENV, "1")
+    _install_flashinfer_capability(monkeypatch, SupportedWrapper, version)
+    with pytest.raises(RuntimeError, match="qualified only for FlashInfer 0.6.18"):
+        model_source.Qwen4ExpMTP(_config(), 48, {"attention": None, "shared": None})
+    assert not model_source.constructed_configs
+
+
+def test_nonatomic_rejects_kwargs_only_flashinfer_api(
+    model_source: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class KwargsOnlyWrapper:
+        def __init__(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
+
+    monkeypatch.setenv(_ENV, "1")
+    monkeypatch.setenv(_NONATOMIC_ENV, "1")
+    _install_flashinfer_capability(monkeypatch, KwargsOnlyWrapper)
+    with pytest.raises(RuntimeError, match="keyword-only enable_w4a16_tc_decode=True"):
+        model_source.Qwen4ExpMTP(_config(), 48, {"attention": None, "shared": None})
+    assert not model_source.constructed_configs
+
+
+def test_nonatomic_rejects_named_old_flashinfer_api(
+    model_source: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class OldNamedWrapper:
+        def __init__(self, *, use_cuda_graph: bool = False) -> None:
+            self.use_cuda_graph = use_cuda_graph
+
+    monkeypatch.setenv(_ENV, "1")
+    monkeypatch.setenv(_NONATOMIC_ENV, "1")
+    _install_flashinfer_capability(monkeypatch, OldNamedWrapper)
+    with pytest.raises(RuntimeError, match="keyword-only enable_w4a16_tc_decode=True"):
+        model_source.Qwen4ExpMTP(_config(), 48, {"attention": None, "shared": None})
+    assert not model_source.constructed_configs
+
+
+def test_nonatomic_rejects_uninspectable_flashinfer_api(
+    model_source: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class SupportedWrapper:
+        def __init__(self, *, enable_w4a16_tc_decode: bool = True) -> None:
+            self.enable_w4a16_tc_decode = enable_w4a16_tc_decode
+
+    monkeypatch.setenv(_ENV, "1")
+    monkeypatch.setenv(_NONATOMIC_ENV, "1")
+    _install_flashinfer_capability(monkeypatch, SupportedWrapper)
+    monkeypatch.setattr(model_source.inspect, "signature", Mock(side_effect=ValueError))
+    with pytest.raises(RuntimeError, match="requires an inspectable reviewed FlashInfer API"):
+        model_source.Qwen4ExpMTP(_config(), 48, {"attention": None, "shared": None})
+    assert not model_source.constructed_configs
+
+
+def test_nonatomic_marks_only_the_resolved_mtp_backend(
+    model_source: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def supported_init(self, *, enable_w4a16_tc_decode: bool = True) -> None:
+        self.enable_w4a16_tc_decode = enable_w4a16_tc_decode
+
+    class SupportedWrapper:
+        @wraps(supported_init)
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            supported_init(self, *args, **kwargs)
+
+    monkeypatch.setenv(_ENV, "1")
+    monkeypatch.setenv(_NONATOMIC_ENV, "1")
+    _install_flashinfer_capability(monkeypatch, SupportedWrapper)
+    config = _config()
+    layer = model_source.Qwen4ExpMTP(config, 48, {"attention": None, "shared": None})
+    assert layer.mlp.experts.backend._b12x_enable_w4a16_tc_decode is False
+    assert not hasattr(config, "_b12x_enable_w4a16_tc_decode")
+
+    monkeypatch.setenv(_ENV, "0")
+    monkeypatch.setenv(_NONATOMIC_ENV, "0")
+    second = model_source.Qwen4ExpMTP(_config(), 48, {"attention": None, "shared": None})
+    assert not hasattr(second.mlp.experts.backend, "_b12x_enable_w4a16_tc_decode")

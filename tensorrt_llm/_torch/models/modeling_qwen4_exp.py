@@ -15,6 +15,7 @@
 """TensorRT-LLM text implementation for Qwen3.8-Flash-Next checkpoints."""
 
 import copy
+import inspect
 import os
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Dict, List, Literal, Optional, Tuple
@@ -1041,6 +1042,43 @@ def _qwen4_exp_mtp_b12x_config(
     return mtp_config
 
 
+def _qwen4_exp_mtp_b12x_nonatomic_enabled() -> bool:
+    """Validate the experimental MTP-only non-atomic FlashInfer opt-in."""
+    selector = os.environ.get("TRTLLM_QWEN4_MTP_B12X_NONATOMIC", "0")
+    if selector == "0":
+        return False
+    if selector != "1":
+        raise ValueError("TRTLLM_QWEN4_MTP_B12X_NONATOMIC must be 0 or 1")
+    if os.environ.get("TRTLLM_QWEN4_MTP_B12X", "0") != "1":
+        raise ValueError("MTP-only non-atomic B12x requires TRTLLM_QWEN4_MTP_B12X=1")
+
+    try:
+        import flashinfer
+    except ImportError as error:
+        raise RuntimeError(
+            "MTP-only non-atomic B12x requires the reviewed FlashInfer capability"
+        ) from error
+    if getattr(flashinfer, "__version__", None) != "0.6.18":
+        raise RuntimeError("MTP-only non-atomic B12x is qualified only for FlashInfer 0.6.18")
+    try:
+        wrapper_init = inspect.unwrap(flashinfer.B12xMoEWrapper.__init__)
+        parameter = inspect.signature(wrapper_init).parameters.get("enable_w4a16_tc_decode")
+    except (AttributeError, TypeError, ValueError) as error:
+        raise RuntimeError(
+            "MTP-only non-atomic B12x requires an inspectable reviewed FlashInfer API"
+        ) from error
+    if (
+        parameter is None
+        or parameter.kind is not inspect.Parameter.KEYWORD_ONLY
+        or parameter.default is not True
+    ):
+        raise RuntimeError(
+            "MTP-only non-atomic B12x requires FlashInfer's keyword-only "
+            "enable_w4a16_tc_decode=True capability"
+        )
+    return True
+
+
 class Qwen4ExpMTP(Qwen4ExpDecoderLayer):
     """One checkpoint MTP layer, replayed recurrently for each draft token."""
 
@@ -1051,6 +1089,7 @@ class Qwen4ExpMTP(Qwen4ExpDecoderLayer):
         aux_stream_dict: Dict[AuxStreamType, torch.cuda.Stream],
     ) -> None:
         target_config = model_config
+        nonatomic_enabled = _qwen4_exp_mtp_b12x_nonatomic_enabled()
         model_config = _qwen4_exp_mtp_b12x_config(model_config, layer_idx)
         super().__init__(
             model_config,
@@ -1064,6 +1103,8 @@ class Qwen4ExpMTP(Qwen4ExpDecoderLayer):
 
             if not isinstance(getattr(self.mlp.experts, "backend", None), CuteDslB12xFusedMoE):
                 raise RuntimeError("MTP-only B12x was requested but MoE resolution fell back")
+            if nonatomic_enabled:
+                self.mlp.experts.backend._b12x_enable_w4a16_tc_decode = False
         config = model_config.pretrained_config
         self.pre_fc_norm_embedding = RMSNorm(
             hidden_size=config.hidden_size,
