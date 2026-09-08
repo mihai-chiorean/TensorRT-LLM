@@ -11,6 +11,20 @@ is claimed until measured. Keep spark-094a's working deployment unchanged.
 
 ## Current Checkpoint
 
+### Next Experiments: September 8, Preparation
+
+- C8 confirmation proposal prepared and independently reviewed: fixed-length
+  warmup, quality after timing and fresh workers in both arm orders. Client
+  admission accounts for both guard and lease deadlines. No new results.
+- Banach is inspecting the pinned Spark3883 vLLM execution path for actionable
+  differences; Nietzsche owns bounded confirmation-protocol preparation.
+- Additional priorities: explain PLE/clock warmup effects, qualify overlap,
+  then profile N96 dequantization before caching it. Shorter MTP also changes
+  eligible dense dispatch at full B8: MTP3/M32 uses FI CUTLASS, MTP1/M16 can
+  use B12x. Source-confirmed hypothesis, not a measured speedup. Existing
+  keepers/rejected experiments preserved; no baseline changes or GPU loads.
+- [Opportunity queue](scripts/flashnext/NEXT_OPPORTUNITIES.md). MIT-912 updated.
+
 ### Seeded TC-Decode Performance A/B: September 8, Completed
 
 - User authorized metrics-OFF TC-decode True versus False measurements.
