@@ -356,3 +356,24 @@ These are experimental implementation mistakes, not claims about upstream.
   not zero accepted drafts. Separate instrumented comparison is planned.
 - See [full results](MTP_NONATOMIC_RESULTS.md). Candidate remains default-off
   in isolated research branch; no upstream fix or baseline change is claimed.
+
+### Instrumented Acceptance Follow-Up, September 8
+
+- A fresh metrics-enabled single-CSV C1 pair gives True707/945 (74.8148%) and
+  False704/936 (75.2137%) accepted drafts. Each arm emits identical128 IDs in
+  all eight repeats, also identical across arms. Candidate layer48 activation
+  is confirmed in its log. This is not an acceptance-collapse failure.
+- A separately labeled, unchanged original40-request mixed-prompt/drain probe
+  on the same instrumented False worker gives40/40 valid and24/24 exact.
+  Earlier uninstrumented False0/24 remains unresolved, not retracted. Metrics
+  synchronization, unfrozen FI choices and different prior histories prevent
+  assigning the improvement to a particular mechanism or declaring a fix.
+- Native caches match exactly. Next discriminate metrics OFF/ON with validated
+  FI seed and exercised-choice evidence, then trace a reproduced first
+  divergence. Research-only cache hook33a37a9e passes57 CPU tests and hooks but
+  has not run on the GPU. No new baseline/kernel patch is promoted.
+- Diagnostic client validation fixes: hard wall-clock shutdown, all-response
+  joins instead of subsets, final usage ordering and float32 rate tolerance.
+  Fourteen CPU tests pass. These were caught before generation requests and
+  are measurement fixes, not TRT inference fixes.
+- See [acceptance results](MTP_ACCEPTANCE_RESULTS.md) for exact scopes/artifacts.

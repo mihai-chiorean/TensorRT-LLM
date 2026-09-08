@@ -11,6 +11,36 @@ is claimed until measured. Keep spark-094a's working deployment unchanged.
 
 ## Current Checkpoint
 
+### Completed Diagnostic: September 8, 04:15 UTC
+
+- **MTP acceptance measured, no new speed keeper.** Single CSV sentinel,
+  C1, one canary then eight fixed128-token repeats per fresh worker:
+  True707/945 **74.8148%**, False704/936 **75.2137%** accepted drafts.
+  All output IDs are identical within and across arms. Both canaries88/117.
+- Candidate option is confirmed active on layer48. Same prior B8/MTP3/native
+  seed/profile; only existing metrics collection fields added. Exact response
+  ID/server-record joins pass. Metrics timing is not a throughput benchmark.
+- Extra separately labeled original40-request mixed-history probe on the
+  instrumented False worker: **40/40 valid,24/24 exact**. Previous uninstrumented
+  False0/24 remains open. No first divergence available in this fixture.
+  Metrics synchronization, FI tactic selection and prior histories remain
+  confounded; this is not proof of a race fix or general repeatability.
+- Both final native caches equal the seed. FI dense selections are unfrozen.
+  Next acquire/validate FI cache, audit exercised choices, and compare metrics
+  OFF/ON under matched settings before adding a same-prefix trace.
+- Research-only helper **33a37a9e** is pushed on isolated
+  `experiment/flashnext-acceptance-diagnostic`, not deployed or merged into
+  baseline.57 CPU tests, independent review and commit hooks pass. Live seed
+  acquisition/replay remains open. Frozen acceptance client passes14 tests.
+- Both workers cleaned up with no owned PIDs. Final cleanup04:14:32;
+  Isaac unpaused with unchanged identity04:15:11, independently healthy
+  04:15:49 with115.03GiB available. Tunnel18086 closed.
+  Guard minimum available memory30.19/29.41GiB, no OOMs.094a untouched.
+- [Report](scripts/flashnext/MTP_ACCEPTANCE_RESULTS.md); raw logs, exact
+  request snapshots, ID analysis and safety evidence in sibling
+  `flashnext-results/`. MIT-923/MIT-912 remain open; older wins/failures below
+  and in existing reports are preserved, not replaced by this diagnostic.
+
 ### Completed Follow-up: September 8, 01:13 UTC
 
 - **No new speed or stability keeper.** MTP-only non-atomic option runs in the
