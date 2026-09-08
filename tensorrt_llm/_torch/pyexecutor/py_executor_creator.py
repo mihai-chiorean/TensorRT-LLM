@@ -559,6 +559,13 @@ def create_py_executor(
                     vm_pools[stage] = memory_pool
                     yield
 
+    fi_cache_session = None
+    if ("TRTLLM_FLASHNEXT_FI_CACHE_LOAD" in os.environ
+            or "TRTLLM_FLASHNEXT_FI_CACHE_SAVE" in os.environ):
+        from ._fi_cache_research import begin_fi_cache_research
+        fi_cache_session = begin_fi_cache_research(llm_args, mapping,
+                                                   checkpoint_dir, logger.info)
+
     with allocation_scope(ExecutorMemoryType.MODEL_ENGINE_MAIN):
         model_weights_memory_tag = None
         model_weights_restore_mode = None
@@ -1062,5 +1069,14 @@ def create_py_executor(
         logger.info(f"LLM Args:\n{llm_args}")
 
     py_executor.start_worker()
+
+    if fi_cache_session is not None:
+        # Start first so shutdown can join the event loop on export failure.
+        # The caller cannot submit requests until this creator returns.
+        try:
+            fi_cache_session.save()
+        except (OSError, ValueError, RuntimeError, TypeError):
+            py_executor.shutdown()
+            raise
 
     return py_executor
