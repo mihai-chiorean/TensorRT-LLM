@@ -46,29 +46,62 @@ is claimed until measured. Keep spark-094a's working deployment unchanged.
 - All eight requests exceeded the immutable23:26:43 UTC deadline. No finished
   report was exported. Preserve the9.5MiB partial stream; no hotspot attribution
   or throughput conclusion follows from this failed capture.
+- Forensic audit: requests began23:25:41.64, about28.64s after the profile
+  marker, leaving only61.36s for generation. Empty nonstreaming response bodies
+  do not establish zero internal progress; neither MPI failure nor a kernel
+  hang is demonstrated. A future trace must eliminate this admission delay.
 - The90s profile-start supervisor returned124 and the original guard cleaned
   all descendants at23:26:45. Isaac restored23:27:33, fresh healthy23:28:03.
   No OOM, limit extension or service recreation. Spark094a untouched.
 - Raw client errors and server/partial-stream archive are in sibling results,
   `tracev2-true-20260908-client/` and `tracev2-true-server-20260908.tar`.
-  CPU-only forensic review pending; do not blame the post-cleanup Nsight EOF
-  warning for the earlier timeout without additional evidence.
-- MTP1 preparation found our private cache helper only permits draft3.
-  A separate research-only1/3 allowance passes72 focused CPU tests and is
-  under independent review. No changed runtime has been deployed.
+- CPU recovery also failed: initial importer exit10 lost stderr because its
+  tmpfs was copied after container exit. A corrected isolated attempt retained
+  stderr but exited134, `terminate called without an active exception`.
+  Both disposable jobs were removed, input unchanged; cause remains unknown.
+  Do not blame the post-cleanup Nsight EOF warning for the earlier timeout.
 
-### Next Experiments: September 8, Preparation
+### MTP Length V1: September 8-9 UTC, Completed
 
-- C8 confirmation proposal prepared and independently reviewed: fixed-length
-  warmup, quality after timing and fresh workers in both arm orders. Client
-  admission accounts for both guard and lease deadlines. No new results.
-- Banach is inspecting the pinned Spark3883 vLLM execution path for actionable
-  differences; Nietzsche owns bounded confirmation-protocol preparation.
-- Additional priorities: explain PLE/clock warmup effects, qualify overlap,
-  then profile N96 dequantization before caching it. Shorter MTP also changes
-  eligible dense dispatch at full B8: MTP3/M32 uses FI CUTLASS, MTP1/M16 can
-  use B12x. Source-confirmed hypothesis, not a measured speedup. Existing
-  keepers/rejected experiments preserved; no baseline changes or GPU loads.
+- Separate research-only helper commit `ba0d02b3` accepts MTP1 or3;76 CPU
+  tests, independent review, pre-commit and DCO hooks passed. Pushed to fork
+  branch `experiment/flashnext-fi-mtp13`, not merged into the stable branch.
+  Deployed only in fresh `flashnext-fi-mtp13-validation-20260908` archive;
+  original source and shared seeds preserved.
+- Registered order MTP1 then MTP3, both TC-decode True. Same C8 fixed32x128
+  warmup, two timing rounds, eight normal-EOS quality cases. No profiler,
+  extra canary or acceptance requests. Same guards, leases and resource caps.
+- MTP1 completed all104 requests:102.5404/109.0232 tok/s, pooled105.6825;
+  quality6/1/1. Effective draft1/graphs verified; native/FI initialization
+  exports match seeds, not proof of serving-time exercised-key coverage.
+- MTP3 completed113.4285/120.4761 tok/s, pooled116.8461; quality7/0/1.
+  Retain MTP3: +10.56% throughput over MTP1 in this fixed-order screening
+  pair. No acceptance/kernel-time causal claim or general quality claim.
+- Both workers cleaned up with remaining[]. Final MTP3 cleanup September9
+  00:01:34 UTC; Isaac restored00:02:14, fresh healthy00:02:44. See
+  [MTP-length results](scripts/flashnext/MTP_LENGTH_V1_RESULTS.md).
+
+### Next Experiments: September 9 UTC
+
+- C8 confirmation and MTP-length screening are complete above. Retain MTP3
+  and TC-decode True; neither experiment promotes a new performance default.
+- One shorter diagnostic trace started00:11:54 UTC, original a4345e6c runtime,
+  iterations0..5, eight first-use C8 fixed64 raw-ID requests. The client stages
+  before READY and submits automatically after health/runtime-marker checks.
+  Same90s profile cutoff,1000s guard and1200s independent Isaac recovery.
+  All eight requests timed out despite submission within3.02s of the marker.
+  No finished report; partial stream preserved. Cleanup00:18:34, Isaac
+  restored00:19:25, fresh healthy00:19:55. No further identical trace retry.
+  See [short trace results](scripts/flashnext/SHORT_TRACE_V2_RESULTS.md).
+- vLLM source audit is complete. Next priorities: qualify overlap, identify
+  N96 dequantization's measured share before caching, investigate PLE warmup.
+  Overlap correctness protocol preparation is delegated without GPU access.
+  Independent review found the private FI cache helper explicitly rejects
+  overlap. A YAML-only ON worker is not runnable: first review a narrow
+  research allowance deployed identically to both arms, then a bounded
+  lifecycle screen. Do not silently drop seeding from the ON arm.
+  Existing keepers and rejected experiments remain preserved; no new matched
+  vLLM comparison has been run.
 - [Opportunity queue](scripts/flashnext/NEXT_OPPORTUNITIES.md). MIT-912 updated.
 
 ### Seeded TC-Decode Performance A/B: September 8, Completed

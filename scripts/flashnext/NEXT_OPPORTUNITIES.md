@@ -7,6 +7,37 @@ September 8, 2026. Current model: Qwen3.8-Flash-Next NVFP4 on Spark3883.
 This is an experiment queue, not new benchmark evidence. Preserve the existing
 runtime and all earlier results. Spark094a remains unchanged.
 
+## Execution Update
+
+The registered C8 confirmation is complete; the preparation text below remains
+as the original protocol. Candidate gains were +4.25% and +1.08% in the two
+prescribed order pairs, with differing small-suite quality outcomes. No
+promotion. See [confirmation results](TC_CONFIRMATION_V2_RESULTS.md).
+
+The subsequent bounded Nsight trace failed qualification: all eight requests
+timed out and no completed report was exported. Actual submission left only
+61.36s of the90s range budget. Partial-stream CPU recovery is diagnostic only;
+no hotspot attribution follows yet. MTP1-versus-MTP3 preparation now has a
+separate, reviewed private-cache scope allowance in research commit `ba0d02b3`.
+It changes no model defaults or kernel and remains outside the stable runtime.
+
+The MTP-length screening subsequently completed: MTP3 produced116.8461 tok/s
+versus MTP1's105.6825, a10.56% lead in the registered fixed-order pair.
+Retain MTP3; no acceptance or isolated-kernel causal claim follows. See
+[MTP-length results](MTP_LENGTH_V1_RESULTS.md). The shorter separately registered
+trace also timed out despite immediate submission; see
+[short trace results](SHORT_TRACE_V2_RESULTS.md). Overlap correctness
+qualification is next, with profiler diagnosis kept separate. The original
+preparation sections below are historical proposals, not pending C8 work.
+
+Overlap preparation review found a launch blocker: the pinned private
+`_fi_cache_research._validate_scope` requires overlap OFF. A YAML-only ON
+comparison cannot start. Any experiment must first review a narrowly scoped
+research allowance and deploy it identically to both arms, retaining seeding.
+The initial screen should distinguish baseline instability from ON-only
+regression, use actual in-flight replacement requests rather than drained
+waves, and keep text quality scoring separate from raw-ID responses.
+
 ## Immediate Control
 
 The seeded non-atomic MTP candidate has a provisional C8 lead of 3.51%, not a
@@ -40,7 +71,8 @@ Recheck admission before every phase. Guard+570 readiness is only a necessary
 condition, not permission to run a late client. Preserve all failures and
 quality results, exclude warmup from timing, and report both order pairs
 separately. Same-sign tiny deltas alone do not establish a practically useful
-improvement beyond variation. No executable V2 client or launcher is deployed.
+improvement beyond variation. The V2 client and launcher were subsequently
+deployed for the completed campaign recorded above.
 
 ## Ranked Investigation Queue
 
@@ -49,7 +81,7 @@ improvement beyond variation. No executable V2 client or launcher is deployed.
 | 1 | Explain the large warmup effect | True C1 improved from 28.40 to 36.37 output tok/s across rounds. Both TTFT and post-first-text time fell, including equal-text pairs. Run a separate repeated/reversed prompt diagnostic with precise client timestamps and low-rate clocks/fault telemetry. PLE page access is a hypothesis, not established causality. |
 | 2 | Overlap host scheduling with GPU work | The current profile explicitly disables overlap. Capture CPU launch gaps and GPU idle intervals, then qualify the existing overlap option on matched fresh workers. Test early termination, turnover and state reuse before timing. Do not treat source eligibility as correctness qualification. |
 | 3 | Remove repeated N96 weight dequantization | The current MXFP8 reference branch reconstructs and casts weights on every forward. A narrow derived BF16 cache for the GDN N96/K2560 projection could remove repeated work. Profile its full-model share first; the existing plan estimates 16.875 MiB for 36 buffers, excluding temporaries. Refit, graph pointer stability and cache invalidation need explicit tests. |
-| 4 | Tune MTP length for the actual serving workload | The current profile fixes MTP3. Compare shorter draft lengths only after the execution profile is stable; record accepted output rate, draft/verify time and acceptance separately. Acceptance from one sentinel is not a workload-wide estimate, and a higher acceptance fraction alone is not a speed win. |
+| 4 | Tune MTP length for the actual serving workload | First screening completed: retain MTP3,10.56% ahead of MTP1 in one fixed-order pair. A future causal investigation needs draft/verify time and workload acceptance measurements; acceptance from one sentinel is not a workload-wide estimate. |
 | 5 | Longer-context KV and prefill policy | The current short-prompt, 128-output-token corpus cannot identify the best long-context policy. Compare FP8 KV and chunked prefill in separately admitted workloads, with quality and recurrent-state controls. These are workload-dependent experiments, not explanations for every short-context gap. |
 
 These opportunities are not additive percentage promises. Measure time removed
@@ -76,8 +108,8 @@ isolated kernel speedup.
 
 ## vLLM Source Audit
 
-Banach is auditing the pinned replica on Spark3883, not changing the working
-094a deployment. Compare actual PLE execution, dense MXFP8/N96, MTP experts,
+Banach completed the source audit of the pinned replica on Spark3883 without
+changing the working094a deployment. It compares PLE execution, dense MXFP8/N96, MTP experts,
 GDN, graph capture and scheduler synchronization with the deployed TRT source.
 The deliverable must separate already adopted, previously rejected and new
 ideas, with source/version anchors and a minimal discriminating test.
