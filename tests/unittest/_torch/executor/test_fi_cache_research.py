@@ -68,6 +68,7 @@ def setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     helper = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(helper)
     monkeypatch.delenv(helper._LOAD, raising=False)
+    monkeypatch.delenv(helper._ALLOW_OVERLAP, raising=False)
     monkeypatch.setenv(helper._SAVE, str(tmp_path / "output.json"))
     (tmp_path / "config.json").write_text(json.dumps({"architectures": ["Qwen4ExpForCausalLM"]}))
     tuner = FakeTuner()
@@ -182,7 +183,13 @@ def test_nonempty_singleton_is_not_cleared(setup: SimpleNamespace, field: str) -
 
 
 @pytest.mark.parametrize("field", ["is_tuning_mode", "_active_tuning_contexts"])
-def test_active_tuner_rejected_at_load_and_save(setup: SimpleNamespace, field: str) -> None:
+@pytest.mark.parametrize("overlap", [False, True])
+def test_active_tuner_rejected_at_load_and_save(
+    setup: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, field: str, overlap: bool
+) -> None:
+    if overlap:
+        monkeypatch.setenv(setup.helper._ALLOW_OVERLAP, "1")
+        setup.args.disable_overlap_scheduler = False
     setattr(setup.tuner, field, 1)
     with pytest.raises(RuntimeError, match="inactive"):
         _begin(setup)
@@ -258,6 +265,64 @@ def test_mtp_draft_scope_accepts_only_explicit_lengths(
 ) -> None:
     setup.args.speculative_config.max_draft_len = draft_len
     _begin(setup)
+
+
+@pytest.mark.parametrize("disabled", [False, True])
+def test_overlap_opt_in_preserves_seed_and_export(
+    setup: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, disabled: bool
+) -> None:
+    monkeypatch.setenv(setup.helper._ALLOW_OVERLAP, "1")
+    setup.args.disable_overlap_scheduler = disabled
+    seed = _seed(setup, monkeypatch)
+    original = seed.read_bytes()
+    session = _begin(setup)
+    session.save()
+    assert seed.read_bytes() == original
+    assert setup.output.read_bytes() == original
+    assert setup.tuner.events == ["load", "save"]
+
+
+@pytest.mark.parametrize("value", ["", "true", "2"])
+def test_overlap_opt_in_rejects_invalid_values(
+    setup: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv(setup.helper._ALLOW_OVERLAP, value)
+    with pytest.raises(ValueError, match="must be 0 or 1"):
+        _begin(setup)
+    assert setup.tuner.events == []
+
+
+def test_explicit_zero_still_rejects_overlap(
+    setup: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(setup.helper._ALLOW_OVERLAP, "0")
+    setup.args.disable_overlap_scheduler = False
+    with pytest.raises(ValueError, match="overlap OFF"):
+        _begin(setup)
+    assert setup.tuner.events == []
+
+
+@pytest.mark.parametrize("disabled", [False, True])
+def test_overlap_opt_in_requires_mtp3(
+    setup: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, disabled: bool
+) -> None:
+    monkeypatch.setenv(setup.helper._ALLOW_OVERLAP, "1")
+    setup.args.disable_overlap_scheduler = disabled
+    setup.args.speculative_config.max_draft_len = 1
+    with pytest.raises(ValueError, match="requires MTP draft length 3"):
+        _begin(setup)
+
+
+@pytest.mark.parametrize("field,value", [("enable_autotuner", False), ("sleep_config", object())])
+def test_overlap_opt_in_preserves_other_guards(
+    setup: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, field: str, value: object
+) -> None:
+    monkeypatch.setenv(setup.helper._ALLOW_OVERLAP, "1")
+    setup.args.disable_overlap_scheduler = False
+    setattr(setup.args, field, value)
+    with pytest.raises(ValueError):
+        _begin(setup)
+    assert setup.tuner.events == []
 
 
 @pytest.mark.parametrize(

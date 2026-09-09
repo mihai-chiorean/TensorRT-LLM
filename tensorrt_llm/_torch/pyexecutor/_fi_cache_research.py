@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
 _LOAD = "TRTLLM_FLASHNEXT_FI_CACHE_LOAD"
 _SAVE = "TRTLLM_FLASHNEXT_FI_CACHE_SAVE"
+_ALLOW_OVERLAP = "TRTLLM_FLASHNEXT_FI_CACHE_ALLOW_OVERLAP"
 _ENTRY_LOCK = threading.Lock()
 _STARTED = False
 
@@ -52,8 +53,15 @@ def _validate_scope(llm_args: TorchLlmArgs, mapping: Mapping, checkpoint_dir: st
         or spec.max_draft_len not in (1, 3)
     ):
         raise ValueError("FI research cache requires explicit MTP draft length 1 or 3")
-    if not llm_args.disable_overlap_scheduler or not llm_args.enable_autotuner:
-        raise ValueError("FI research cache requires overlap OFF and global autotuner ON")
+    allow_overlap = os.environ.get(_ALLOW_OVERLAP, "0")
+    if allow_overlap not in ("0", "1"):
+        raise ValueError(f"{_ALLOW_OVERLAP} must be 0 or 1")
+    if allow_overlap == "1" and spec.max_draft_len != 3:
+        raise ValueError("FI overlap research requires MTP draft length 3")
+    if not llm_args.disable_overlap_scheduler and allow_overlap != "1":
+        raise ValueError("FI research cache requires overlap OFF unless explicitly opted in")
+    if not llm_args.enable_autotuner:
+        raise ValueError("FI research cache requires global autotuner ON")
     if llm_args.moe_config.backend != "CUTLASS" or not llm_args.moe_config.disable_finalize_fusion:
         raise ValueError("FI research cache requires target CUTLASS with finalize fusion OFF")
     if llm_args.mm_encoder_only or any(
