@@ -9,6 +9,28 @@ runtime and all earlier results. Spark094a remains unchanged.
 
 ## Execution Update
 
+September9 overlap update: a strict private MTP3 allowance (`1e74d8af`) passed
+88 CPU tests and independent review. The amended OFF/ON lifecycle screen
+matched all15 fixed-output responses and EOS text; see
+[lifecycle results](OVERLAP_LIFECYCLE_V1_RESULTS.md). Separate C8 performance
+workers produced118.9900 tok/s OFF versus113.5604 ON (-4.56%); both small
+quality suites scored6/1/1. Retain OFF; no keeper or new vLLM comparison.
+The resolved KV allocations differed despite equal2GiB requests, so this is
+a configuration-policy screen, not an isolated scheduling effect. See
+[performance results](OVERLAP_PERF_V1_RESULTS.md).
+
+Immediate next investigation is repeated N96 weight dequantization: measure
+the exact deployed geometry and per-step frequency, then test a derived BF16
+cache only if meaningful end-to-end time can be removed. Preserve invalidation,
+refit and CUDA-graph pointer lifetime. PLE warmup remains a separate hypothesis.
+Any future Nsight model capture first requires a CPU-only MPI canary. A small
+later benchmark-client enhancement can preserve the existing response field
+`avg_decoded_tokens_per_iter` without changing requests or runtime metrics;
+this is generated tokens per request sampling iteration, not acceptance rate.
+
+The chronology below preserves earlier proposals and their decisions; it does
+not reopen completed overlap or MTP screening work.
+
 The registered C8 confirmation is complete; the preparation text below remains
 as the original protocol. Candidate gains were +4.25% and +1.08% in the two
 prescribed order pairs, with differing small-suite quality outcomes. No

@@ -11,6 +11,63 @@ is claimed until measured. Keep spark-094a's working deployment unchanged.
 
 ## Current Checkpoint
 
+### Overlap Lifecycle V1: September 9 UTC, Completed
+
+- User authorized the next experiment. Research branch
+  `experiment/flashnext-fi-overlap`, commit `1e74d8af`, adds a default-OFF
+  private allowance for MTP3 overlap while retaining existing cache guards.
+  Both OFF/ON arms will use that exact source with the allowance enabled;
+  only the scheduler YAML flag differs. Stable runtime remains unchanged.
+- Parent and two independent reviews found no helper blocker. All88 CPU tests
+  pass locally and in Spark's container; pre-commit and DCO hooks passed.
+  New Spark source copy: `flashnext-fi-overlap-validation-20260909`.
+- Initial fixture is16 requests, at most352 output tokens and180 seconds:
+  adjacent sentinels, unequal completion with two replacements, EOS, repeats.
+  Client correctness/ordering review passed after boundary fixes;13 CPU tests
+  pass. Frozen client62035746, launcher eb341ded. No performance timing in
+  these leases. OFF worker completed, with an EOS scorer false negative:
+  correct final7 followed a valid reasoning block. Original15-record failed
+  report preserved; only the unissued final32 sentinel was supplemented within
+  the original deadline, with no replay. All five vectors match exactly and
+  replacement coverage passed. Explicit amendment precedes the ON run.
+- OFF cleanup04:51:12 UTC remaining[], Isaac restored04:51:50, fresh healthy
+  04:52:20. ON will retain identical wire requests but use the existing strict
+  reasoning-aware final-answer policy. Parent owns independent adjudication.
+- Corrected scorer81425d44 passes19 CPU tests and independent review; original
+  client62035746 is unchanged. ON worker started04:56:27 UTC, guard131183,
+  fresh state/lease and all runtime pins verified. No timing requests admitted.
+- ON completed all16 responses; independent paired audit finds exact IDs for
+  all15 fixed-output requests across arms and identical EOS text. OFF's
+  amended final request retains its71.411-second idle-gap caveat. This is a
+  narrow lifecycle screen, not general quality or throughput validation.
+- ON cleanup05:03:00 UTC remaining[], Isaac restored05:03:21, fresh healthy
+  05:03:51. See [lifecycle report](scripts/flashnext/OVERLAP_LIFECYCLE_V1_RESULTS.md).
+
+### Overlap Performance V1: September 9 UTC, Completed
+
+- Separately registered OFF then ON, fresh workers, MTP3/TC-decode True.
+  Ready+30-second wait, fixed32x128 C8 warmup, two identical timing rounds,
+  then eight normal-EOS quality requests. Caps90/90/90/60 seconds; no retries.
+- Primary metric is8192 divided by combined timing-round wall seconds.
+  No pooling with lifecycle traffic or previous experiments. One order pair
+  cannot establish a repeatable keeper or a matched vLLM win.
+- Independent review caught and fixed a missing budget recheck after the
+  readiness sleep, before any traffic. Reviewed API launcher bc3eb8ec,
+  server3031e377; both arms retain private overlap allowance1.
+- Both workers completed104 requests, without transport or accounting errors.
+  OFF timing rounds114.2738/124.1122 tok/s, pooled118.9900. ON rounds
+  111.6132/115.5768, pooled113.5604: ON is4.56% lower in this screen.
+  Both small quality suites score6 passed/1 failed/1 unscored. Retain OFF.
+- Important allocation caveat: both requested2GiB, but profiling resolved OFF
+  to1,785,479,936 bytes and ON to2,085,442,304. All other effective arguments
+  match except overlap. This is a configuration-policy result, not proof of
+  an isolated overlap regression or general quality equivalence.
+- OFF cleanup05:21:12 UTC, restored05:21:48, fresh healthy05:22:18.
+  ON cleanup05:31:33 remaining[], restored05:32:08, fresh healthy05:32:38.
+  Same1200-second recovery leases/1000-second guards and resource limits;
+  all primary worker/client/tunnel sessions closed, Spark094a unchanged.
+  See [performance report](scripts/flashnext/OVERLAP_PERF_V1_RESULTS.md).
+
 ### C8 Confirmation V2: September 8, Completed
 
 - User authorized execution. Order: True/False/False/True, four fresh workers.
@@ -93,13 +150,14 @@ is claimed until measured. Keep spark-094a's working deployment unchanged.
   No finished report; partial stream preserved. Cleanup00:18:34, Isaac
   restored00:19:25, fresh healthy00:19:55. No further identical trace retry.
   See [short trace results](scripts/flashnext/SHORT_TRACE_V2_RESULTS.md).
-- vLLM source audit is complete. Next priorities: qualify overlap, identify
-  N96 dequantization's measured share before caching, investigate PLE warmup.
-  Overlap correctness protocol preparation is delegated without GPU access.
-  Independent review found the private FI cache helper explicitly rejects
-  overlap. A YAML-only ON worker is not runnable: first review a narrow
-  research allowance deployed identically to both arms, then a bounded
-  lifecycle screen. Do not silently drop seeding from the ON arm.
+- vLLM source audit is complete. Overlap's narrow lifecycle qualification and
+  first performance screen are complete above; no speed lead, retain OFF.
+  Next: measure repeated N96 dequantization cost, then consider a narrow
+  derived-weight cache with refit/invalidation and graph-lifetime tests.
+  Investigate PLE warmup separately. Before another model trace, qualify a
+  CPU-only MPI/Nsight canary rather than repeating the failed capture.
+  A later client-only change can retain generated tokens per request sampling
+  iteration already sent by the server; do not call that acceptance rate.
   Existing keepers and rejected experiments remain preserved; no new matched
   vLLM comparison has been run.
 - [Opportunity queue](scripts/flashnext/NEXT_OPPORTUNITIES.md). MIT-912 updated.

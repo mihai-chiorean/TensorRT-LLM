@@ -7,6 +7,30 @@ Baseline: TensorRT-LLM `70feda63959fedf0f5f12c5e8c771e5392ce2d25`.
 Checkpoint: `925d7be6c14c6c9442ef83e8f05b5a3c39304f69`.
 No new NVIDIA issues or PRs have been opened for this experiment.
 
+## Research Harness: Overlap Screening
+
+September 9, 2026: the private FI-cache helper intentionally rejected overlap
+and therefore blocked a YAML-only comparison. Research commit `1e74d8af`
+adds a default-OFF, strict MTP3-only allowance, deployed identically to both
+arms. All88 CPU tests pass locally and in the Spark container. This is a
+research scope change, not an upstream model bug or a performance improvement.
+
+The first lifecycle client then falsely rejected a correct final `7` after a
+single valid reasoning block. The original15-response failed report remains
+unchanged. Only the originally unissued final sentinel was supplemented under
+the original deadline, with the71.411-second idle gap documented. A separately
+frozen client adopts the existing strict final-answer policy and reports
+missing sentinel data as unavailable, not observed divergence. It passes19
+CPU tests; all15 fixed-output responses and EOS text match across arms in the
+paired screen. See [lifecycle results](OVERLAP_LIFECYCLE_V1_RESULTS.md).
+
+Independent review of the performance launcher found that it checked the full
+admission reserve before its readiness sleep, but not immediately afterward.
+A delayed wake could therefore lose the promised reserve. The launcher now
+rechecks fresh time before readiness evidence or requests; a bounded delayed-
+wake test verifies rejection. These two client fixes belong to our harness,
+not NVIDIA runtime bug reports.
+
 ## Research Harness: Composite Checkpoint Scope
 
 September 8, 2026: the first live FI-cache acquisition failed before model
